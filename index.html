@@ -4,9 +4,48 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CM6 Line Editor</title>
+
+  <style>
+    html, body {
+		  margin: 0;
+		  padding: 0;
+		  height: 100%;
+		}
+		
+		#editor {
+		  height: 100%;
+		}
+		.cm-editor {
+		  font-size: 16px;
+		  transform: scale(0.875);
+		  transform-origin: top left;
+		  width: calc(100% / 0.875);
+		}
+		.cm-scroller {
+		  display: flex;
+		  flex-direction: row;
+		}
+		
+		
+		.cm-line {
+		  position: relative;
+		}
+		
+		.line-move-btn {
+		  font-size: 12px;
+			position: absolute;  /* 行の位置に合わせる場合 */
+		  right: 8px;
+		}
+		
+		.line-move-btn.selected {
+		  background: #007aff;
+		  color: white;
+		}
+  </style>
 </head>
 <body>
   <div id="editor"></div>
-  <script type="module" src="./main.ts"></script>
+
+  <script type="module" src="./main.js"></script>
 </body>
 </html>
