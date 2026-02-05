@@ -5,47 +5,30 @@ import { indentOnInput } from "https://esm.sh/@codemirror/language";
 
 
 class LineButtonWidget extends WidgetType {
-  constructor(view, lineNumber) {
+  constructor(lineNumber) {
     super();
-    this.view = view;
     this.lineNumber = lineNumber;
   }
 
-  toDOM() {
+  toDOM(view) { // ★ view は引数で渡される
     const btn = document.createElement("button");
-    btn.textContent = "↑↓";
+    btn.textContent = "↓";
     btn.className = "line-move-btn";
-
-    let timer = null;
-    let longPressed = false;
 
     btn.onpointerdown = e => {
       e.stopPropagation();
-      longPressed = false;
-
-      timer = setTimeout(() => {
-        longPressed = true;
-        startMoveSelect(this.view, this.lineNumber);
-      }, 300);
     };
 
     btn.onpointerup = e => {
-      clearTimeout(timer);
-
-      if (longPressed) return;
-
-      handleShortTap(this.view, this.lineNumber);
-    };
-
-    btn.onpointercancel = () => {
-      clearTimeout(timer);
+      e.stopPropagation();
+      handleShortTap(view, this.lineNumber); // ★ view はここで使う
     };
 
     return btn;
   }
 
   ignoreEvent() {
-    return false;
+    return true;
   }
 }
 
@@ -72,8 +55,18 @@ const lineButtonField = StateField.define({
   provide: f => EditorView.decorations.from(f)
 });
 
+const lineButtonViewInjector = EditorView.updateListener.of(update => {
+  update.view
+    .plugin(lineButtonField)
+    ?.forEach(decoration => {
+      const w = decoration.widget;
+      if (w instanceof LineButtonWidget) {
+        w.view = update.view;
+      }
+    });
+});
+
 function handleShortTap(view, lineNumber) {
-	/*
   // 移動元が選択中なら → 移動先として使う
   if (view._moveSourceLine != null) {
     const from = view.state.doc.line(view._moveSourceLine);
@@ -83,7 +76,7 @@ function handleShortTap(view, lineNumber) {
     view._moveSourceLine = null;
     updateMoveUI(view);
     return;
-  }*/
+  }
 
   // 通常：1行下へ
   const from = view.state.doc.line(lineNumber);
@@ -117,9 +110,9 @@ function buildLineButtons(state) {
 
     widgets.push(
       Decoration.widget({
-        widget: new LineButtonWidget(null, i),
+        widget: new LineButtonWidget(i),
         side: 1
-      }).range(line.to)   // ← ★これが必須
+      }).range(line.to)
     );
   }
 
@@ -375,6 +368,7 @@ const state = EditorState.create({
     history(),
     indentOnInput(),
 		lineButtonField,
+		lineButtonViewInjector,
     keymap.of([
       ...defaultKeymap,
       ...historyKeymap
