@@ -26,20 +26,33 @@
 		  flex-direction: row;
 		}
 		
-		
+		.cm-content {
+		  line-height: 1.5;   /* 1.4〜1.8あたりが扱いやすい */
+		}
 		.cm-line {
 		  position: relative;
+			padding-right: 38px !important;
 		}
 		
 		.line-move-btn {
 		  font-size: 12px;
 			position: absolute;  /* 行の位置に合わせる場合 */
-		  right: 8px;
+		  right: 4px;
+			color: white;
+			border-radius: 6px;
+			height: 100%;
+  		align-items: center;
+  		justify-content: center;
+			width: 30px;
+			top: 50%;
+  		transform: translateY(-50%);
 		}
+		
 		
 		.line-move-btn.selected {
 		  background: #007aff;
 		  color: white;
+			font-weight: bold;
 		}
   </style>
 </head>

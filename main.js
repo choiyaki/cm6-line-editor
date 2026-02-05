@@ -8,20 +8,39 @@ class LineButtonWidget extends WidgetType {
   constructor(lineNumber) {
     super();
     this.lineNumber = lineNumber;
+    this._longPressTimer = null;
+    this._longPressed = false;
   }
 
-  toDOM(view) { // ★ view は引数で渡される
+  toDOM(view) {
     const btn = document.createElement("button");
-    btn.textContent = "↓";
+    btn.textContent = "▽";
     btn.className = "line-move-btn";
+    btn.dataset.line = this.lineNumber;
 
     btn.onpointerdown = e => {
       e.stopPropagation();
+      this._longPressed = false;
+
+      // ★ 長押し判定開始
+      this._longPressTimer = setTimeout(() => {
+        this._longPressed = true;
+        startMoveSelect(view, this.lineNumber);
+      }, 400); // ← 長押し判定時間（ms）
     };
 
     btn.onpointerup = e => {
       e.stopPropagation();
-      handleShortTap(view, this.lineNumber); // ★ view はここで使う
+      clearTimeout(this._longPressTimer);
+
+      if (this._longPressed) return; // 長押し済みなら何もしない
+
+      // ★ 短タップ
+      handleShortTap(view, this.lineNumber);
+    };
+
+    btn.onpointercancel = () => {
+      clearTimeout(this._longPressTimer);
     };
 
     return btn;
@@ -94,10 +113,10 @@ function startMoveSelect(view, lineNumber) {
 function updateMoveUI(view) {
   document.querySelectorAll(".line-move-btn").forEach(btn => {
     const line = Number(btn.dataset.line);
-    btn.classList.toggle(
-      "selected",
-      line === view._moveSourceLine
-    );
+    const selected = line === view._moveSourceLine;
+
+    btn.classList.toggle("selected", selected);
+    btn.textContent = selected ? "⇅" : "▽";
   });
 }
 
