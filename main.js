@@ -49,7 +49,31 @@ class LineButtonWidget extends WidgetType {
   }
 }
 
+const lineActionExtension = EditorView.updateListener.of(update => {
+  update.view.plugin(lineActionField)?.value?.forEach(d => {
+    if (d.widget instanceof LineActionWidget) {
+      d.widget.view = update.view;
+    }
+  });
+});
+
+const lineButtonField = StateField.define({
+  create(state) {
+    // ★ 初期描画時に必ず作る
+    return buildLineButtons(state);
+  },
+
+  update(value, tr) {
+    // 行数 or ドキュメントが変わったときだけ再構築
+    if (!tr.docChanged) return value;
+    return buildLineButtons(tr.state);
+  },
+
+  provide: f => EditorView.decorations.from(f)
+});
+
 function handleShortTap(view, lineNumber) {
+	/*
   // 移動元が選択中なら → 移動先として使う
   if (view._moveSourceLine != null) {
     const from = view.state.doc.line(view._moveSourceLine);
@@ -59,7 +83,7 @@ function handleShortTap(view, lineNumber) {
     view._moveSourceLine = null;
     updateMoveUI(view);
     return;
-  }
+  }*/
 
   // 通常：1行下へ
   const from = view.state.doc.line(lineNumber);
@@ -83,18 +107,6 @@ function updateMoveUI(view) {
     );
   });
 }
-
-const lineButtonField = StateField.define({
-  create(state) {
-    return Decoration.none;
-  },
-
-  update(_, tr) {
-    return buildLineButtons(tr.state, tr.view);
-  },
-
-  provide: f => EditorView.decorations.from(f)
-});
 
 
 function buildLineButtons(state) {
@@ -147,15 +159,6 @@ function buildLineActions(state) {
 
   return widgets;
 }
-
-const lineActionExtension = EditorView.updateListener.of(update => {
-  update.view.plugin(lineActionField)?.value?.forEach(d => {
-    if (d.widget instanceof LineActionWidget) {
-      d.widget.view = update.view;
-    }
-  });
-});
-
 
 
 function moveLine(view, fromLine, toLine) {
