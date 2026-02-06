@@ -14,11 +14,12 @@ class LineButtonWidget extends WidgetType {
 
   toDOM(view) {
     const btn = document.createElement("button");
-    btn.textContent = "▽";
+    btn.textContent = "";
     btn.className = "line-move-btn";
     btn.dataset.line = this.lineNumber;
 
     btn.onpointerdown = e => {
+			if (view.composing) return;
       e.stopPropagation();
       this._longPressed = false;
 
@@ -30,6 +31,7 @@ class LineButtonWidget extends WidgetType {
     };
 
     btn.onpointerup = e => {
+			if (view.composing) return;
       e.stopPropagation();
       clearTimeout(this._longPressTimer);
 
@@ -44,10 +46,6 @@ class LineButtonWidget extends WidgetType {
     };
 
     return btn;
-  }
-
-  ignoreEvent() {
-    return true;
   }
 }
 
@@ -85,6 +83,119 @@ const lineButtonViewInjector = EditorView.updateListener.of(update => {
     });
 });
 
+const fixEmptyLineBackspace = keymap.of([
+  {
+    key: "Backspace",
+    run(view) {
+      const { state } = view;
+      const sel = state.selection.main;
+      if (!sel.empty) return false;
+
+      const pos = sel.head;
+      const line = state.doc.lineAt(pos);
+
+      // ★ 空行 & 行頭
+      if (line.from === line.to && pos === line.from) {
+        if (line.number === 1) return true;
+        const prev = state.doc.line(line.number - 1);
+
+        view.dispatch({
+          changes: {
+            from: prev.to,
+            to: line.to // 改行を消す
+          },
+          selection: { anchor: prev.to }
+        });
+
+        return true; // ★ defaultKeymap を止める
+      }
+
+      return false; // それ以外は defaultKeymap に任せる
+    }
+  }
+]);
+
+const fixEmptyLineClick = EditorView.domEventHandlers({
+  mousedown(event, view) {
+    if (event.button !== 0) return;
+
+    const pos = view.posAtCoords({
+      x: event.clientX,
+      y: event.clientY
+    });
+
+    if (pos == null) return;
+
+    const line = view.state.doc.lineAt(pos);
+
+    // ★ 空行ならカーソルを行頭に固定
+    if (line.from === line.to) {
+      view.dispatch({
+        selection: { anchor: line.from }
+      });
+
+      event.preventDefault();
+    }
+  }
+});
+
+
+const listEnterKeymap = keymap.of([{
+  key: "Enter",
+  run(view) {
+    const { state } = view;
+    const pos = state.selection.main.head;
+    const line = state.doc.lineAt(pos);
+
+    const text = line.text;
+
+    // - または - [ ] / - [x]
+    const match = text.match(/^(\s*)(- )(?:\[( |x)\] )?(.*)$/);
+    if (!match) return false; // 通常の Enter に任せる
+
+    const indent = match[1];
+    const bullet = match[2];
+    const checkbox = match[3]; // undefined | " " | "x"
+    const content = match[4];
+
+    // ★ 中身が空ならリスト解除
+    if (content.length === 0) {
+      view.dispatch({
+        changes: {
+          from: line.from,
+          to: line.to,
+          insert: ""
+        }
+      });
+      return true;
+    }
+
+    // 次行に挿入する文字列
+    let nextLine = indent + bullet;
+    if (checkbox !== undefined) {
+      nextLine += "[ ] ";
+    }
+
+    view.dispatch({
+      changes: {
+        from: pos,
+        to: pos,
+        insert: "\n" + nextLine
+      },
+      selection: {
+        anchor: pos + 1 + nextLine.length
+      }
+    });
+
+    return true; // ★ デフォルト Enter を止める
+  }
+}]);
+
+
+function isComposing(view) {
+  return view.composing;
+}
+
 function handleShortTap(view, lineNumber) {
   // 移動元が選択中なら → 移動先として使う
   if (view._moveSourceLine != null) {
@@ -116,7 +227,7 @@ function updateMoveUI(view) {
     const selected = line === view._moveSourceLine;
 
     btn.classList.toggle("selected", selected);
-    btn.textContent = selected ? "⇅" : "▽";
+    btn.textContent = selected ? "" : "";
   });
 }
 
@@ -176,21 +287,33 @@ function buildLineActions(state) {
 function moveLine(view, fromLine, toLine) {
   if (!toLine || fromLine.number === toLine.number) return;
 
+  const doc = view.state.doc;
+
+  const fromHasBreak = fromLine.to < doc.length;
+  const fromText = fromLine.text + (fromHasBreak ? "\n" : "");
+
   const changes = [];
 
+  // 元の行を削除
   changes.push({
     from: fromLine.from,
-    to: fromLine.to + 1
+    to: fromLine.to + (fromHasBreak ? 1 : 0)
   });
 
-  let insertPos = toLine.from;
+  // 挿入位置を計算
+  let insertPos;
   if (fromLine.number < toLine.number) {
-    insertPos = toLine.to + 1;
+    // 下へ移動
+    insertPos = toLine.to;
+    if (toLine.to < doc.length) insertPos += 1;
+  } else {
+    // 上へ移動
+    insertPos = toLine.from;
   }
 
   changes.push({
     from: insertPos,
-    insert: fromLine.text + "\n"
+    insert: fromText
   });
 
   view.dispatch({ changes });
@@ -378,16 +501,39 @@ function buildLine({ indent, isList, content }) {
   return spaces + bullet + content;
 }
 
+const STORAGE_KEY = "cm6-line-editor-doc";
+
+function saveToLocal(state) {
+  localStorage.setItem(
+    STORAGE_KEY,
+    state.doc.toString()
+  );
+}
+
+function loadFromLocal() {
+  return localStorage.getItem(STORAGE_KEY) ?? "";
+}
+
+const autosaveExtension = EditorView.updateListener.of(update => {
+  if (update.docChanged) {
+    saveToLocal(update.state);
+  }
+});
+
 const state = EditorState.create({
-  doc: "Swipe right to indent\nSwipe left to outdent\nSwipe right to indent\nSwipe left to outdent\nSwipe right to indent\nSwipe left to outdent",
+  doc: loadFromLocal(),
   extensions: [
 		EditorView.lineWrapping,
 		swipeIndentExtension(),
 		listToggleExtension(),
     history(),
     indentOnInput(),
-		lineButtonField,
+		//lineButtonField,
 		lineButtonViewInjector,
+		autosaveExtension,
+		fixEmptyLineBackspace,
+		fixEmptyLineClick,
+		listEnterKeymap,
     keymap.of([
       ...defaultKeymap,
       ...historyKeymap
