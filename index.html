@@ -34,27 +34,33 @@
 		  position: relative;
 			padding-right: 20px !important;
 		}
-		
-		.line-move-btn {
-		  font-size: 12px;
-			position: absolute;  /* 行の位置に合わせる場合 */
-		  right: 4px;
-			color: white;
-			border-radius: 1px;
-			height: 100%;
-  		align-items: center;
-  		justify-content: center;
-			width: 15px;
-			top: 50%;
-  		transform: translateY(-50%);
+		.cm-gutters{
+			background-color: #fff;   /* 白背景 */
+  		border-right: none !important;
 		}
 		
-		
-		.line-move-btn.selected {
-		  background: #007aff;
-		  color: white;
-			font-weight: bold;
-		}
+.cm-move-line-gutter .cm-gutterElement {
+  display: flex;
+  align-items: stretch; /* ★ 行の高さに合わせる */
+	background-color: white;
+}
+
+.gutter-move-btn {
+  width: 18px;
+  height: 95%;              /* ★ 行高と同じ */
+  padding: 0;
+  border: none;
+  background: rgba(0,0,0,0.1);
+  border-radius: 4px;        /* 四角に近づける */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.gutter-move-btn:active {
+  background: rgba(0,0,0,0.12);
+}
 
   </style>
 </head>

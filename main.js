@@ -1,87 +1,183 @@
-import { EditorView, keymap, lineNumbers, WidgetType, Decoration } from "https://esm.sh/@codemirror/view";
-import { EditorState, StateField } from "https://esm.sh/@codemirror/state";
-import { defaultKeymap, history, historyKeymap } from "https://esm.sh/@codemirror/commands";
-import { indentOnInput } from "https://esm.sh/@codemirror/language";
+import {
+  EditorView,
+  ViewPlugin,
+  gutter,
+  GutterMarker,
+  keymap
+} from "https://esm.sh/@codemirror/view";
+
+import {
+  EditorState,
+  StateEffect
+} from "https://esm.sh/@codemirror/state";
+
+import {
+  defaultKeymap,
+  history,
+  historyKeymap
+} from "https://esm.sh/@codemirror/commands";
+
+import {
+  indentOnInput
+} from "https://esm.sh/@codemirror/language";
+
+const requestMoveLine = StateEffect.define();
 
 
-class LineButtonWidget extends WidgetType {
-  constructor(lineNumber) {
-    super();
-    this.lineNumber = lineNumber;
-    this._longPressTimer = null;
-    this._longPressed = false;
-  }
-
+class MoveLineMarker extends GutterMarker {
   toDOM(view) {
     const btn = document.createElement("button");
-    btn.textContent = "";
-    btn.className = "line-move-btn";
-    btn.dataset.line = this.lineNumber;
+    btn.className = "gutter-move-btn";
+    btn.textContent = view._moveSourceLine ? "" : "";
+
+    let longPressTimer = null;
+    let longPressed = false;
 
     btn.onpointerdown = e => {
-			if (view.composing) return;
+      if (view.composing) return;
+      e.preventDefault();
       e.stopPropagation();
-      this._longPressed = false;
 
-      // ★ 長押し判定開始
-      this._longPressTimer = setTimeout(() => {
-        this._longPressed = true;
-        startMoveSelect(view, this.lineNumber);
-      }, 400); // ← 長押し判定時間（ms）
+      longPressed = false;
+      longPressTimer = setTimeout(() => {
+        longPressed = true;
+
+        const pos = view.posAtCoords({
+          x: e.clientX,
+          y: e.clientY
+        });
+        if (pos == null) return;
+
+        const line = view.state.doc.lineAt(pos);
+        startMoveSelect(view, line.number);
+        view.dispatch({});
+      }, 400);
     };
 
     btn.onpointerup = e => {
-			if (view.composing) return;
+      if (view.composing) return;
+      e.preventDefault();
       e.stopPropagation();
-      clearTimeout(this._longPressTimer);
 
-      if (this._longPressed) return; // 長押し済みなら何もしない
+      clearTimeout(longPressTimer);
+      if (longPressed) return;
 
-      // ★ 短タップ
-      handleShortTap(view, this.lineNumber);
+      const pos = view.posAtCoords({
+        x: e.clientX,
+        y: e.clientY
+      });
+      if (pos == null) return;
+
+      const line = view.state.doc.lineAt(pos);
+      handleShortTap(view, line.number);
+      view.dispatch({});
     };
 
     btn.onpointercancel = () => {
-      clearTimeout(this._longPressTimer);
+      clearTimeout(longPressTimer);
     };
 
     return btn;
   }
+
+  eq() {
+    return false; // 常に再描画
+  }
 }
 
-const lineActionExtension = EditorView.updateListener.of(update => {
-  update.view.plugin(lineActionField)?.value?.forEach(d => {
-    if (d.widget instanceof LineActionWidget) {
-      d.widget.view = update.view;
-    }
-  });
-});
+const moveLinePlugin = ViewPlugin.fromClass(class {
+  update(update) {
+    for (const tr of update.transactions) {
+      for (const effect of tr.effects) {
+        if (effect.is(requestMoveLine)) {
+          console.log("move requested:", effect.value);
 
-const lineButtonField = StateField.define({
-  create(state) {
-    // ★ 初期描画時に必ず作る
-    return buildLineButtons(state);
-  },
+          const lineNumber = effect.value;
+          const from = update.state.doc.line(lineNumber);
+          const to = update.state.doc.line(lineNumber + 1);
+          if (!to) return;
 
-  update(value, tr) {
-    // 行数 or ドキュメントが変わったときだけ再構築
-    if (!tr.docChanged) return value;
-    return buildLineButtons(tr.state);
-  },
-
-  provide: f => EditorView.decorations.from(f)
-});
-
-const lineButtonViewInjector = EditorView.updateListener.of(update => {
-  update.view
-    .plugin(lineButtonField)
-    ?.forEach(decoration => {
-      const w = decoration.widget;
-      if (w instanceof LineButtonWidget) {
-        w.view = update.view;
+          moveLine(update.view, from, to);
+        }
       }
-    });
+    }
+  }
 });
+
+const moveLineGutter = gutter({
+  class: "cm-move-line-gutter",
+
+  lineMarker(view, line) {
+	  if (!line) return null;
+	  return new MoveLineMarker(line.number);
+	},
+	
+  initialSpacer() {
+    const spacer = document.createElement("div");
+    spacer.style.width = "18px";
+    return spacer;
+  }
+});
+
+function handleShortTap(view, lineNumber) {
+  console.log("handleShortTap", lineNumber);
+
+  const doc = view.state.doc;
+
+  if (view._moveSourceLine != null) {
+    const from = doc.line(view._moveSourceLine);
+    const to = doc.line(lineNumber);
+
+    moveLine(view, from, to);
+    view._moveSourceLine = null;
+    return;
+  }
+
+  // ★ 最終行ガード
+  if (lineNumber >= doc.lines) return;
+
+  const from = doc.line(lineNumber);
+  const to = doc.line(lineNumber + 1);
+
+  moveLine(view, from, to);
+}
+
+function startMoveSelect(view, lineNumber) {
+  view._moveSourceLine = lineNumber;
+}
+/*
+function moveLine(view, fromLine, toLine) {
+  if (!toLine || fromLine.number === toLine.number) return;
+
+  const doc = view.state.doc;
+
+  const hasBreak = fromLine.to < doc.length;
+  const text = fromLine.text + (hasBreak ? "\n" : "");
+
+  const changes = [];
+
+  // 元行削除
+  changes.push({
+    from: fromLine.from,
+    to: fromLine.to + (hasBreak ? 1 : 0)
+  });
+
+  let insertPos;
+  if (fromLine.number < toLine.number) {
+    insertPos = toLine.to;
+    if (toLine.to < doc.length) insertPos += 1;
+  } else {
+    insertPos = toLine.from;
+  }
+
+  changes.push({
+    from: insertPos,
+    insert: text
+  });
+
+  view.dispatch({ changes });
+}
+*/
 
 const fixEmptyLineBackspace = keymap.of([
   {
@@ -192,98 +288,6 @@ const listEnterKeymap = keymap.of([{
 }]);
 
 
-function isComposing(view) {
-  return view.composing;
-}
-
-function handleShortTap(view, lineNumber) {
-  // 移動元が選択中なら → 移動先として使う
-  if (view._moveSourceLine != null) {
-    const from = view.state.doc.line(view._moveSourceLine);
-    const to = view.state.doc.line(lineNumber);
-
-    moveLine(view, from, to);
-    view._moveSourceLine = null;
-    updateMoveUI(view);
-    return;
-  }
-
-  // 通常：1行下へ
-  const from = view.state.doc.line(lineNumber);
-  const to = view.state.doc.line(lineNumber + 1);
-  if (!to) return;
-
-  moveLine(view, from, to);
-}
-
-function startMoveSelect(view, lineNumber) {
-  view._moveSourceLine = lineNumber;
-  updateMoveUI(view);
-}
-
-function updateMoveUI(view) {
-  document.querySelectorAll(".line-move-btn").forEach(btn => {
-    const line = Number(btn.dataset.line);
-    const selected = line === view._moveSourceLine;
-
-    btn.classList.toggle("selected", selected);
-    btn.textContent = selected ? "" : "";
-  });
-}
-
-
-function buildLineButtons(state) {
-  const widgets = [];
-
-  for (let i = 1; i <= state.doc.lines; i++) {
-    const line = state.doc.line(i);
-
-    widgets.push(
-      Decoration.widget({
-        widget: new LineButtonWidget(i),
-        side: 1
-      }).range(line.to)
-    );
-  }
-
-  return Decoration.set(widgets);
-}
-
-function buildCursorLineButtons(state, view) {
-  if (!view) return Decoration.none;
-
-  const pos = state.selection.main.head;
-  const line = state.doc.lineAt(pos);
-
-  return Decoration.set([
-    Decoration.widget({
-      widget: new CursorLineButtons(view, line),
-      side: 1
-    }).range(line.to)
-  ]);
-}
-
-
-
-function buildLineActions(state) {
-  const widgets = [];
-
-  for (let i = 1; i <= state.doc.lines; i++) {
-    const line = state.doc.line(i);
-
-    widgets.push(
-      Decoration.widget({
-        widget: new LineActionWidget(null, line),
-        side: 1,
-        pos: line.to
-      })
-    );
-  }
-
-  return widgets;
-}
-
-
 function moveLine(view, fromLine, toLine) {
   if (!toLine || fromLine.number === toLine.number) return;
 
@@ -318,6 +322,8 @@ function moveLine(view, fromLine, toLine) {
 
   view.dispatch({ changes });
 }
+
+
 
 function listToggleExtension() {
   return EditorView.domEventHandlers({
@@ -528,8 +534,6 @@ const state = EditorState.create({
 		listToggleExtension(),
     history(),
     indentOnInput(),
-		//lineButtonField,
-		lineButtonViewInjector,
 		autosaveExtension,
 		fixEmptyLineBackspace,
 		fixEmptyLineClick,
@@ -537,7 +541,9 @@ const state = EditorState.create({
     keymap.of([
       ...defaultKeymap,
       ...historyKeymap
-    ])
+    ]),
+		moveLineGutter,
+		moveLinePlugin
   ]
 });
 
