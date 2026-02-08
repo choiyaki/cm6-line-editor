@@ -3,7 +3,8 @@ import {
   ViewPlugin,
   gutter,
   GutterMarker,
-  keymap
+  keymap,
+	Decoration
 } from "https://esm.sh/@codemirror/view";
 
 import {
@@ -28,7 +29,7 @@ class MoveLineMarker extends GutterMarker {
   toDOM(view) {
     const btn = document.createElement("button");
     btn.className = "gutter-move-btn";
-    btn.textContent = view._moveSourceLine ? "" : "";
+    btn.textContent = view._moveSourceLine ? "" : "▽";
 
     let longPressTimer = null;
     let longPressed = false;
@@ -145,39 +146,6 @@ function handleShortTap(view, lineNumber) {
 function startMoveSelect(view, lineNumber) {
   view._moveSourceLine = lineNumber;
 }
-/*
-function moveLine(view, fromLine, toLine) {
-  if (!toLine || fromLine.number === toLine.number) return;
-
-  const doc = view.state.doc;
-
-  const hasBreak = fromLine.to < doc.length;
-  const text = fromLine.text + (hasBreak ? "\n" : "");
-
-  const changes = [];
-
-  // 元行削除
-  changes.push({
-    from: fromLine.from,
-    to: fromLine.to + (hasBreak ? 1 : 0)
-  });
-
-  let insertPos;
-  if (fromLine.number < toLine.number) {
-    insertPos = toLine.to;
-    if (toLine.to < doc.length) insertPos += 1;
-  } else {
-    insertPos = toLine.from;
-  }
-
-  changes.push({
-    from: insertPos,
-    insert: text
-  });
-
-  view.dispatch({ changes });
-}
-*/
 
 const fixEmptyLineBackspace = keymap.of([
   {
@@ -465,6 +433,13 @@ function swipeIndentExtension() {
       const t = event.touches[0];
       view._swipeStartX = t.clientX;
       view._swipeStartY = t.clientY;
+
+      // ★ 選択状態を保存
+      const sel = view.state.selection.main;
+      view._swipeStartSelection = {
+        anchor: sel.anchor,
+        head: sel.head
+      };
     },
 
     touchend(event, view) {
@@ -476,8 +451,24 @@ function swipeIndentExtension() {
       const dx = t.clientX - startX;
       const dy = t.clientY - startY;
 
-      // 縦スクロールを優先
-      if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return;
+      // ★ 選択が変わっていたら → スワイプ無効
+      const sel = view.state.selection.main;
+      const startSel = view._swipeStartSelection;
+
+      if (
+        startSel &&
+        (sel.anchor !== startSel.anchor ||
+         sel.head !== startSel.head)
+      ) {
+        cleanup(view);
+        return;
+      }
+
+      // 縦スクロール優先
+      if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) {
+        cleanup(view);
+        return;
+      }
 
       if (dx > 0) {
         indentCurrentLine(view);
@@ -485,10 +476,15 @@ function swipeIndentExtension() {
         outdentCurrentLine(view);
       }
 
-      view._swipeStartX = null;
-      view._swipeStartY = null;
+      cleanup(view);
     }
   });
+}
+
+function cleanup(view) {
+  view._swipeStartX = null;
+  view._swipeStartY = null;
+  view._swipeStartSelection = null;
 }
 
 function parseLine(lineText) {
@@ -506,6 +502,94 @@ function buildLine({ indent, isList, content }) {
   const bullet = isList ? "- " : "";
   return spaces + bullet + content;
 }
+
+
+function getIndentInfo(lineText) {
+  const indentMatch = lineText.match(/^(\s*)/);
+  const baseIndent = indentMatch[1].length;
+
+  // checkbox
+  if (/^\s*- \[( |x)\] /.test(lineText)) {
+    return { indent: baseIndent + 6 };
+  }
+
+  // list
+  if (/^\s*- /.test(lineText)) {
+    return { indent: baseIndent + 2 };
+  }
+
+  // normal
+  return { indent: baseIndent };
+}
+
+
+function computePrefixWidth(text) {
+  // 先頭スペース
+  const indentMatch = text.match(/^(\s*)/);
+  const spaces = indentMatch ? indentMatch[1].length : 0;
+
+  // 2スペース = 1階層 → 1階層 = 2ch
+  let width = spaces; // ch 単位で扱う
+
+  if (/^\s*- \[[ x]\] /.test(text)) {
+    width += 6; // "- [ ] "
+  } else if (/^\s*- /.test(text)) {
+    width += 2; // "- "
+  }
+
+  return width;
+}
+
+const hangingIndentPlugin = ViewPlugin.fromClass(
+  class {
+    constructor(view) {
+      this.decorations = this.build(view);
+    }
+
+    update(update) {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = this.build(update.view);
+      }
+    }
+
+    build(view) {
+      const decos = [];
+
+      for (const { from, to } of view.visibleRanges) {
+        let pos = from;
+
+        while (pos <= to) {
+          const line = view.state.doc.lineAt(pos);
+          const text = line.text;
+
+          const prefixWidth = computePrefixWidth(text);
+          if (prefixWidth > 0) {
+            // body の開始位置
+            const bodyFrom = line.from;
+
+            decos.push(
+              Decoration.mark({
+                class: "cm-body",
+                attributes: {
+                  style: `--prefix-width: ${prefixWidth}ch`
+                }
+              }).range(bodyFrom, line.to)
+            );
+          }
+
+          pos = line.to + 1;
+        }
+      }
+
+      return Decoration.set(decos);
+    }
+  },
+  {
+    decorations: v => v.decorations
+  }
+);
+
+
 
 const STORAGE_KEY = "cm6-line-editor-doc";
 
@@ -538,6 +622,7 @@ const state = EditorState.create({
 		fixEmptyLineBackspace,
 		fixEmptyLineClick,
 		listEnterKeymap,
+		hangingIndentPlugin,
     keymap.of([
       ...defaultKeymap,
       ...historyKeymap
@@ -548,6 +633,6 @@ const state = EditorState.create({
 });
 
 new EditorView({
-  state,
+	state,
   parent: document.getElementById("editor")
 });

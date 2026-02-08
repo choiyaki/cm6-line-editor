@@ -2,70 +2,117 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+    
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
   <title>CM6 Line Editor</title>
-
+  <link
+    rel="stylesheet"
+    href="https://esm.sh/@codemirror/view/dist/style.css"
+  />
   <style>
-    html, body {
-		  margin: 0;
-		  padding: 0;
-		  height: 100%;
-		}
-		
-		#editor {
-		  height: 100%;
-		}
-		.cm-editor {
-		  font-size: 16px;
-		  transform: scale(0.875);
-		  transform-origin: top left;
-		  width: calc(100% / 0.875);
-		}
-		
-		.cm-scroller {
-		  display: flex;
-		  flex-direction: row;
-		}
 		
 		.cm-content {
 		  line-height: 1.5;   /* 1.4〜1.8あたりが扱いやすい */
 		}
 		.cm-line {
-		  position: relative;
-			padding-right: 20px !important;
+			white-space: pre-wrap;
 		}
+		.cm-line:has(.cm-list-bullet) {
+		  padding-left: 2em;
+		  text-indent: -2em;
+		}
+		
+		
 		.cm-gutters{
 			background-color: #fff;   /* 白背景 */
   		border-right: none !important;
 		}
 		
-.cm-move-line-gutter .cm-gutterElement {
-  display: flex;
-  align-items: stretch; /* ★ 行の高さに合わせる */
-	background-color: white;
-}
+		.cm-move-line-gutter .cm-gutterElement {
+		  display: flex;
+		  align-items: stretch; /* ★ 行の高さに合わせる */
+			background-color: white;
+		}
+		
+		.gutter-move-btn {
+		  width: 18px;
+		  height: 100%;              /* ★ 行高と同じ */
+		  padding: 0;
+		  border: none;
+		  background: rgba(0,0,0,0.1);
+		  border-radius: 1px;         /* 四角に近づける */
+		  display: flex;
+		  align-items: center;
+		  justify-content: center;
+		  cursor: pointer;
+		  border: 1px solid white;
+			color: white;
+			font-weight: 800;
+		}
+		
+		.gutter-move-btn:active {
+		  background: rgba(0,0,0,0.12);
+		}
+		
+		.cm-body {
+		  display: inline-block;
+		  padding-left: var(--prefix-width);
+		  text-indent: calc(var(--prefix-width) * -1);
+		  white-space: pre-wrap;
+		}
 
-.gutter-move-btn {
-  width: 18px;
-  height: 95%;              /* ★ 行高と同じ */
+html, body {
+  margin: 0;
   padding: 0;
-  border: none;
-  background: rgba(0,0,0,0.1);
-  border-radius: 4px;        /* 四角に近づける */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
 }
 
-.gutter-move-btn:active {
-  background: rgba(0,0,0,0.12);
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ===== header ===== */
+
+#app-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+  z-index: 1000;
+}
+
+/* ===== main ===== */
+
+#app-main {
+  padding-top: 40px;
+}
+
+/* ===== scale ===== */
+
+#editor-scale-wrapper {
+  font-size: 16px;
+  transform: scale(0.875);
+  transform-origin: top left;
+  width: calc(100% / 0.875);
 }
 
   </style>
 </head>
 <body>
-  <div id="editor"></div>
+  <header id="app-header">
+    <div class="header-title" contenteditable="true">タイトル</div>
+    <button class="header-button">Export</button>
+  </header>
+
+  <main id="app-main">
+    <div id="editor-scale-wrapper">
+      <div id="editor"></div>
+    </div>
+  </main>
 
   <script type="module" src="./main.js"></script>
 </body>
