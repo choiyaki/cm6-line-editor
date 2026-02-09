@@ -100,6 +100,31 @@ body {
   width: calc(100% / 0.875);
 }
 
+/* エディタのコンテナに対して設定 */
+.cm-editor {
+  position: relative;
+}
+
+/* 右半分を薄いブルーにするレイヤー */
+.cm-editor::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 25%; /* 右半分 */
+  height: 100%;
+  background-color: rgba(0, 122, 255, 0.03); /* ほんのりブルー */
+  pointer-events: none; /* タップ操作を邪魔しない */
+  z-index: 0;
+  border-left: 1px dashed rgba(0, 122, 255, 0.1); /* 境界線を薄く表示（任意） */
+}
+
+/* スクロールバーや中身がブルーの下に隠れないよう調整 */
+.cm-scroller {
+  z-index: 1;
+}
+
+
   </style>
 </head>
 <body>

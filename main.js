@@ -15,7 +15,9 @@ import {
 import {
   defaultKeymap,
   history,
-  historyKeymap
+  historyKeymap,
+	moveLineUp,
+	moveLineDown
 } from "https://esm.sh/@codemirror/commands";
 
 import {
@@ -481,6 +483,101 @@ function swipeIndentExtension() {
   });
 }
 
+
+// --- 右半分専用の操作（タップでカーソル、上下スワイプで行入れ替え） ---
+function rightSideSwipeMoveExtension() {
+  let startX = 0;
+  let startY = 0;
+  let hasMovedInThisSwipe = false;
+  let isRightSide = false;
+
+  return EditorView.domEventHandlers({
+		touchstart(event, view) {
+		  if (event.touches.length !== 1) return;
+		
+		  const rect = view.dom.getBoundingClientRect();
+		  const touch = event.touches[0];
+		  const x = touch.clientX - rect.left;
+		
+		  if (x > rect.width * 0.75) {
+		    isRightSide = true;
+		    startX = touch.clientX;
+		    startY = touch.clientY;
+		    hasMovedInThisSwipe = false;
+				
+				if (!view.hasFocus) {
+          view.focus();
+          const pos = view.posAtCoords({ x: touch.clientX, y: touch.clientY });
+          if (pos !== null) {
+            view.dispatch({ 
+              selection: { anchor: pos, head: pos },
+              scrollIntoView: true // ★ false から true に変更
+            });
+          }
+        }
+
+
+		
+		    // --- 追加: キーボード未表示時でもフォーカスを強制する ---
+		    if (!view.hasFocus) {
+		      view.focus();
+		    }
+		
+		    // 右半分でのスクロールを防止
+		    if (event.cancelable) event.preventDefault();
+		  } else {
+		    isRightSide = false;
+		  }
+		},
+		
+
+
+    touchmove(event, view) {
+      if (!isRightSide || hasMovedInThisSwipe) return;
+
+      const touch = event.touches[0];
+      const diffY = touch.clientY - startY;
+      const threshold = 30;
+
+      if (Math.abs(diffY) > threshold) {
+        if (diffY < 0) {
+          moveLineUp(view);
+        } else {
+          moveLineDown(view);
+        }
+        hasMovedInThisSwipe = true;
+      }
+      
+      // 右側での移動中は常にスクロールを阻止
+      if (isRightSide && event.cancelable) event.preventDefault();
+    },
+
+    touchend(event, view) {
+      if (!isRightSide) return;
+
+      if (!hasMovedInThisSwipe) {
+        const touch = event.changedTouches[0];
+        const pos = view.posAtCoords({ x: touch.clientX, y: touch.clientY });
+        if (pos !== null) {
+          view.dispatch({
+            selection: { anchor: pos, head: pos },
+            scrollIntoView: true,
+            userEvent: "select"
+          });
+        }
+      }
+
+      isRightSide = false;
+      hasMovedInThisSwipe = false;
+    }
+  });
+}
+
+
+
+// 標準のコマンド moveLineUp/Down をインポートから利用できるように確認
+
+
 function cleanup(view) {
   view._swipeStartX = null;
   view._swipeStartY = null;
@@ -615,6 +712,7 @@ const state = EditorState.create({
   extensions: [
 		EditorView.lineWrapping,
 		swipeIndentExtension(),
+		rightSideSwipeMoveExtension(),
 		listToggleExtension(),
     history(),
     indentOnInput(),
@@ -631,6 +729,7 @@ const state = EditorState.create({
 		moveLinePlugin
   ]
 });
+
 
 new EditorView({
 	state,
