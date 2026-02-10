@@ -14,9 +14,23 @@
 		.cm-content {
 		  line-height: 1.5;   /* 1.4〜1.8あたりが扱いやすい */
 		}
+		
 		.cm-line {
 			white-space: pre-wrap;
 		}
+		/* ===== 非空行をカード風に ===== */
+.cm-line {
+  border-radius: 2px;
+}
+
+.cm-line.cm-non-empty-line {
+  background: #fff8e6;
+  border-radius: 6px;
+}
+		
+.cm-line.cm-block-body {
+  position: relative;
+}
 		.cm-line:has(.cm-list-bullet) {
 		  padding-left: 2em;
 		  text-indent: -2em;
@@ -24,34 +38,8 @@
 		
 		
 		.cm-gutters{
-			background-color: #fff;   /* 白背景 */
+			background-color: #fff;
   		border-right: none !important;
-		}
-		
-		.cm-move-line-gutter .cm-gutterElement {
-		  display: flex;
-		  align-items: stretch; /* ★ 行の高さに合わせる */
-			background-color: white;
-		}
-		
-		.gutter-move-btn {
-		  width: 18px;
-		  height: 100%;              /* ★ 行高と同じ */
-		  padding: 0;
-		  border: none;
-		  background: rgba(0,0,0,0.1);
-		  border-radius: 1px;         /* 四角に近づける */
-		  display: flex;
-		  align-items: center;
-		  justify-content: center;
-		  cursor: pointer;
-		  border: 1px solid white;
-			color: white;
-			font-weight: 800;
-		}
-		
-		.gutter-move-btn:active {
-		  background: rgba(0,0,0,0.12);
 		}
 		
 		.cm-body {
@@ -61,68 +49,131 @@
 		  white-space: pre-wrap;
 		}
 
-html, body {
-  margin: 0;
-  padding: 0;
+		html, body {
+		  margin: 0;
+		  padding: 0;
+		}
+		
+		body {
+		  font-family: system-ui, -apple-system, sans-serif;
+		  overflow-y: auto;
+		  -webkit-overflow-scrolling: touch;
+		}
+		
+		/* ===== header ===== */
+		
+		#app-header {
+		  position: fixed;
+		  top: 0;
+		  left: 0;
+		  right: 0;
+		  height: 40px;
+		  background: #fff;
+		  border-bottom: 1px solid #ddd;
+		  z-index: 1000;
+		}
+		
+		/* ===== main ===== */
+		
+		#app-main {
+		  padding-top: 40px;
+		}
+		
+		/* ===== scale ===== */
+		
+		#editor-scale-wrapper {
+		  font-size: 16px;
+		  transform: scale(0.875);
+		  transform-origin: top left;
+		  width: calc(100% / 0.875);
+		}
+		
+		/* エディタのコンテナに対して設定 */
+		.cm-editor {
+		  position: relative;
+		}
+		
+		/* 右半分を薄いブルーにするレイヤー */
+		.cm-line.cm-non-empty-line::after {
+		  content: "";
+		  position: absolute;
+		  top: 0;
+		  right: 0;
+		  width: 25%; /* 右半分 */
+		  height: 100%;
+		  background-color: rgba(0, 122, 255, 0.03); /* ほんのりブルー */
+		  pointer-events: none; /* タップ操作を邪魔しない */
+		  z-index: 0;
+		  border-left: 1px dashed rgba(0, 122, 255, 0.1); /* 境界線を薄く表示（任意） */
+		}
+		/* 非空行だけ右側操作エリアを表示 */
+
+/* 空行では右側操作エリアを完全に消す 
+.cm-editor:not(.cm-non-empty-line)::after {
+  content: none;
+}*/
+		
+		/* スクロールバーや中身がブルーの下に隠れないよう調整 */
+		.cm-scroller {
+		  z-index: 1;
+		}
+
+
+.cm-block-gutter .cm-gutterElement {
+  align-items: flex-start;
 }
 
-body {
-  font-family: system-ui, -apple-system, sans-serif;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* ===== header ===== */
-
-#app-header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 40px;
-  background: #fff;
-  border-bottom: 1px solid #ddd;
-  z-index: 1000;
-}
-
-/* ===== main ===== */
-
-#app-main {
-  padding-top: 40px;
-}
-
-/* ===== scale ===== */
-
-#editor-scale-wrapper {
-  font-size: 16px;
-  transform: scale(0.875);
-  transform-origin: top left;
-  width: calc(100% / 0.875);
-}
-
-/* エディタのコンテナに対して設定 */
-.cm-editor {
+/* ブロック本体側の縦バー */
+.cm-line.cm-block-body {
   position: relative;
 }
 
-/* 右半分を薄いブルーにするレイヤー */
-.cm-editor::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 25%; /* 右半分 */
-  height: 100%;
-  background-color: rgba(0, 122, 255, 0.03); /* ほんのりブルー */
-  pointer-events: none; /* タップ操作を邪魔しない */
-  z-index: 0;
-  border-left: 1px dashed rgba(0, 122, 255, 0.1); /* 境界線を薄く表示（任意） */
+.cm-block-menu {
+  position: fixed;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+  padding: 6px;
+  z-index: 1000;
 }
 
-/* スクロールバーや中身がブルーの下に隠れないよう調整 */
-.cm-scroller {
-  z-index: 1;
+.cm-block-menu button {
+  display: block;
+  width: 100%;
+  padding: 10px 10px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+	font-size: 14px;
 }
+
+.cm-block-menu button:hover {
+  background: #f0f4ff;
+}
+
+.block-gutter-btn {
+  width: 20px;
+  margin-left: 2px;
+  background: rgba(0, 122, 255, 0.18);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.cm-block-gutter-container {
+  width: 20px;
+	background-color: white;
+}
+
+.cm-block-gutter {
+  width: 20px;
+  margin-left: 2px;
+  background: rgba(0, 122, 255, 0.18);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
 
 
   </style>

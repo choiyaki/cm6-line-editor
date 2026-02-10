@@ -27,128 +27,6 @@ import {
 const requestMoveLine = StateEffect.define();
 
 
-class MoveLineMarker extends GutterMarker {
-  toDOM(view) {
-    const btn = document.createElement("button");
-    btn.className = "gutter-move-btn";
-    btn.textContent = view._moveSourceLine ? "" : "▽";
-
-    let longPressTimer = null;
-    let longPressed = false;
-
-    btn.onpointerdown = e => {
-      if (view.composing) return;
-      e.preventDefault();
-      e.stopPropagation();
-
-      longPressed = false;
-      longPressTimer = setTimeout(() => {
-        longPressed = true;
-
-        const pos = view.posAtCoords({
-          x: e.clientX,
-          y: e.clientY
-        });
-        if (pos == null) return;
-
-        const line = view.state.doc.lineAt(pos);
-        startMoveSelect(view, line.number);
-        view.dispatch({});
-      }, 400);
-    };
-
-    btn.onpointerup = e => {
-      if (view.composing) return;
-      e.preventDefault();
-      e.stopPropagation();
-
-      clearTimeout(longPressTimer);
-      if (longPressed) return;
-
-      const pos = view.posAtCoords({
-        x: e.clientX,
-        y: e.clientY
-      });
-      if (pos == null) return;
-
-      const line = view.state.doc.lineAt(pos);
-      handleShortTap(view, line.number);
-      view.dispatch({});
-    };
-
-    btn.onpointercancel = () => {
-      clearTimeout(longPressTimer);
-    };
-
-    return btn;
-  }
-
-  eq() {
-    return false; // 常に再描画
-  }
-}
-
-const moveLinePlugin = ViewPlugin.fromClass(class {
-  update(update) {
-    for (const tr of update.transactions) {
-      for (const effect of tr.effects) {
-        if (effect.is(requestMoveLine)) {
-          console.log("move requested:", effect.value);
-
-          const lineNumber = effect.value;
-          const from = update.state.doc.line(lineNumber);
-          const to = update.state.doc.line(lineNumber + 1);
-          if (!to) return;
-
-          moveLine(update.view, from, to);
-        }
-      }
-    }
-  }
-});
-
-const moveLineGutter = gutter({
-  class: "cm-move-line-gutter",
-
-  lineMarker(view, line) {
-	  if (!line) return null;
-	  return new MoveLineMarker(line.number);
-	},
-	
-  initialSpacer() {
-    const spacer = document.createElement("div");
-    spacer.style.width = "18px";
-    return spacer;
-  }
-});
-
-function handleShortTap(view, lineNumber) {
-  console.log("handleShortTap", lineNumber);
-
-  const doc = view.state.doc;
-
-  if (view._moveSourceLine != null) {
-    const from = doc.line(view._moveSourceLine);
-    const to = doc.line(lineNumber);
-
-    moveLine(view, from, to);
-    view._moveSourceLine = null;
-    return;
-  }
-
-  // ★ 最終行ガード
-  if (lineNumber >= doc.lines) return;
-
-  const from = doc.line(lineNumber);
-  const to = doc.line(lineNumber + 1);
-
-  moveLine(view, from, to);
-}
-
-function startMoveSelect(view, lineNumber) {
-  view._moveSourceLine = lineNumber;
-}
-
 const fixEmptyLineBackspace = keymap.of([
   {
     key: "Backspace",
@@ -573,9 +451,312 @@ function rightSideSwipeMoveExtension() {
   });
 }
 
+function isBlockStartSafe(state, lineDesc) {
+  if (!lineDesc || lineDesc.from == null) return false;
+
+  const line = state.doc.lineAt(lineDesc.from);
+
+  if (line.text.length === 0) return false;
+  if (line.number === 1) return true;
+
+  const prev = state.doc.line(line.number - 1);
+  return prev.text.length === 0;
+}
+
+function blockHeight(view, startLineDesc) {
+  const state = view.state;
+  const doc = state.doc;
+
+  // gutter から渡ってくるのは lineDesc
+  const startLine = doc.lineAt(startLineDesc.from);
+
+  let height = 0;
+
+  for (let n = startLine.number; n <= doc.lines; n++) {
+    const line = doc.line(n);
+
+    // 各行の実描画高さを加算
+    const block = view.lineBlockAt(line.from);
+    height += block.height;
+
+    // 先頭以外で空行が来たらブロック終了
+    if (n !== startLine.number && line.text.length === 0) {
+      break;
+    }
+  }
+
+  return height;
+}
+class BlockGutterMarker extends GutterMarker {
+  constructor(height, lineFrom, view) {
+    super();
+    this.height = height;
+    this.lineFrom = lineFrom; // ★ 行番号ではなく from を保存
+    this.view = view;
+  }
+
+  toDOM() {
+    const el = document.createElement("div");
+    el.className = "cm-block-gutter";
+    el.style.height = this.height + "px";
+
+    el.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const state = this.view.state;
+
+      // ★ クリック時に「今の」lineNumber を計算
+      const line = state.doc.lineAt(this.lineFrom);
+
+      showBlockMenu({
+        view: this.view,
+        lineNumber: line.number,
+        anchorEl: el
+      });
+    });
+
+    return el;
+  }
+}
+
+const blockGutter = gutter({
+  class: "cm-block-gutter-container",
+
+  lineMarker(view, line) {
+    if (!isBlockStartSafe(view.state, { from: line.from })) return null;
+
+    const h = blockHeight(view, line);
+    return new BlockGutterMarker(h, line.from, view);
+  }
+});
+
+function getBlockText(state, startLineNumber) {
+	console.log("ok");
+  const lines = [];
+  const doc = state.doc;
+  let n = startLineNumber;
+
+  while (n <= doc.lines) {
+    const line = doc.line(n);
+    if (n !== startLineNumber && line.text.length === 0) break;
+
+    lines.push(line.text);
+    n++;
+  }
+
+  return lines;
+}
+
+function buildScrapboxUrl(blockLines,actions) {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  const date = encodeURIComponent(`${yyyy}${mm}${dd}日誌`);
+  const bodyText = blockLines.join("\n").replace(/  /g," ").replace(/\- /g," ");
+	const body = encodeURIComponent(bodyText);
+  return `sbporter://scrapbox.io/choiyaki/${date}?body=${body}`;
+}
+
+function blockUrlBuilders(blockLines,action) {
+	const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+	if(action === "scrapbox") {
+		alert(action)
+    const date = encodeURIComponent(`${yyyy}${mm}${dd}日誌`);
+	  const bodyText = blockLines.join("\n").replace(/  /g," ").replace(/\- /g," ");
+		const body = encodeURIComponent(bodyText);
+	  return `sbporter://scrapbox.io/choiyaki/${date}?body=${body}`;
+  } else if(action === "choidiary"){
+		const date = `${yyyy}${mm}${dd}`;
+	  const bodyText = blockLines.join("\n").replace(/  /g," ").replace(/\- /g," ");
+		const body = encodeURIComponent(bodyText);
+	  return `touch-https://scrapbox.io/choidiary/${date}?body=${body}`;
+  }else if(action === "SaveLog"){
+	  const bodyText = blockLines.join("\n").replace(/  /g," ").replace(/\- /g," ");
+		const body = encodeURIComponent(bodyText);
+	  return `shortcuts://run-shortcut?name=Choiyakiをmd保存&input=${body}`;
+  }
+};
+
+const blockBodyDecoration = ViewPlugin.fromClass(
+  class {
+    constructor(view) {
+      this.decorations = this.build(view);
+    }
+
+    update(update) {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = this.build(update.view);
+      }
+    }
+
+    build(view) {
+      const decos = [];
+      const { state } = view;
+
+      for (const { from, to } of view.visibleRanges) {
+        let pos = from;
+
+        while (pos <= to) {
+          const line = state.doc.lineAt(pos);
+
+          // ブロック先頭
+          if (
+            line.text.length > 0 &&
+            isBlockStartSafe(state, { from: line.from })
+          ) {
+            let n = line.number;
+            while (n <= state.doc.lines) {
+              const l = state.doc.line(n);
+              if (n !== line.number && l.text.length === 0) break;
+
+              decos.push(
+                Decoration.line({
+                  class: "cm-block-body"
+                }).range(l.from)
+              );
+
+              n++;
+            }
+          }
+
+          pos = line.to + 1;
+        }
+      }
+
+      return Decoration.set(decos);
+    }
+  },
+  {
+    decorations: v => v.decorations
+  }
+);
+
+function insertMemoMark(view, lineNumber, action  ) {
+	
+  if (!view || typeof lineNumber !== "number") return;
+
+  const doc = view.state.doc;
+  if (lineNumber < 1 || lineNumber > doc.lines) return;
+
+  const line = doc.line(lineNumber);
+
+  if (line.text.startsWith("📝")||line.text.startsWith("📓")||line.text.startsWith("💾")) return;
+	if(action === "scrapbox"){
+		view.dispatch({
+	    changes: {
+	      from: line.from,
+	      insert: "📝"
+	    }
+	  });
+	} else if(action === "choidiary"){
+		view.dispatch({
+	    changes: {
+	      from: line.from,
+	      insert: "📓"
+	    }
+	  });
+	} else {
+		view.dispatch({
+	    changes: {
+	      from: line.from,
+	      insert: "💾"
+	    }
+	  });
+	};
+  
+}
+
+function showBlockMenu({ view, lineNumber, anchorEl }) {
+  document.querySelectorAll(".cm-block-menu").forEach(el => el.remove());
+
+  const menu = document.createElement("div");
+  menu.className = "cm-block-menu";
+
+  menu.innerHTML = `
+    <button data-action="scrapbox">📝Choiyaki</button>
+    <button data-action="choidiary">📓日記帳</button>
+    <button data-action="SaveLog">💾SaveLog</button>
+  `;
+
+  document.body.appendChild(menu);
+
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.left = `${rect.right + 6}px`;
+  menu.style.top = `${rect.top}px`;
+
+  menu.addEventListener("click", e => {
+	  const action = e.target.dataset.action;
+	  if (!action) return;
+	
+	  const blockLines = getBlockText(view.state, lineNumber);
+	
+	
+	  const url = blockUrlBuilders(blockLines,action);
+		
+		insertMemoMark(view, lineNumber, action);
+	
+	  window.location.href = url;
+	
+	  menu.remove();
+	});
+
+  setTimeout(() => {
+    document.addEventListener("click", function close() {
+      menu.remove();
+      document.removeEventListener("click", close);
+    });
+  }, 0);
+}
 
 
-// 標準のコマンド moveLineUp/Down をインポートから利用できるように確認
+
+const nonEmptyLineDecoration = ViewPlugin.fromClass(
+  class {
+    constructor(view) {
+      this.decorations = this.build(view);
+    }
+
+    update(update) {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = this.build(update.view);
+      }
+    }
+
+    build(view) {
+      const decos = [];
+      const { state } = view;
+
+      for (const { from, to } of view.visibleRanges) {
+        let pos = from;
+
+        while (pos <= to) {
+          const line = state.doc.lineAt(pos);
+
+          if (line.text.length > 0) {
+            decos.push(
+              Decoration.line({
+                class: "cm-non-empty-line"
+              }).range(line.from)
+            );
+          }
+
+          pos = line.to + 1;
+        }
+      }
+
+      return Decoration.set(decos);
+    }
+  },
+  {
+    decorations: v => v.decorations
+  }
+);
+
 
 
 function cleanup(view) {
@@ -721,12 +902,13 @@ const state = EditorState.create({
 		fixEmptyLineClick,
 		listEnterKeymap,
 		hangingIndentPlugin,
+		nonEmptyLineDecoration,
     keymap.of([
       ...defaultKeymap,
       ...historyKeymap
     ]),
-		moveLineGutter,
-		moveLinePlugin
+		blockGutter,
+		blockBodyDecoration
   ]
 });
 
