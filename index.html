@@ -9,6 +9,10 @@
     rel="stylesheet"
     href="https://esm.sh/@codemirror/view/dist/style.css"
   />
+	<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
   <style>
 		
 		.cm-content {
@@ -292,5 +296,10 @@ body.header-hidden #app-main {
   </main>
 
   <script type="module" src="./main.js"></script>
+	<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./service-worker.js");
+}
+</script>
 </body>
 </html>
