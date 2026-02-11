@@ -37,23 +37,37 @@ import {
   onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+import {
+  getDocs,
+  collection
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+let isInitialLoad = true;
+let isApplyingRemote = false;
+
 function startSync(view) {
   const linesRef = collection(db, "documents", "main", "lines");
 
   onSnapshot(linesRef, (snapshot) => {
-    snapshot.docChanges().forEach((change) => {
-      const lineNumber = Number(change.doc.id);
-      const data = change.doc.data();
+    if (isInitialLoad) return;
 
-      console.log("remote change", lineNumber, data.text);
+    snapshot.docChanges().forEach((change) => {
+      if (change.type === "removed") return;
+
+      const lineNumber = Number(change.doc.id);
+      const { text } = change.doc.data();
+
+      applyRemoteLine(view, lineNumber, text);
     });
   });
 }
 
-async function saveLine(lineNumber, text) {
+function saveLine(lineNumber, text) {
+  if (isApplyingRemote) return;
+
   const ref = doc(db, "documents", "main", "lines", String(lineNumber));
 
-  await setDoc(ref, {
+  setDoc(ref, {
     text,
     updatedAt: Date.now()
   });
@@ -72,6 +86,67 @@ const syncExtension = EditorView.updateListener.of(update => {
     }
   });
 });
+
+function applyRemoteLine(view, lineNumber, text) {
+  const line = view.state.doc.line(lineNumber);
+
+  isApplyingRemote = true;
+
+  view.dispatch({
+    changes: {
+      from: line.from,
+      to: line.to,
+      insert: text
+    }
+  });
+
+  isApplyingRemote = false;
+}
+
+onSnapshot(linesRef, (snapshot) => {
+  snapshot.docChanges().forEach((change) => {
+    if (change.type === "removed") return;
+
+    const lineNumber = Number(change.doc.id);
+    const { text } = change.doc.data();
+
+    applyRemoteLine(view, lineNumber, text);
+  });
+});
+
+async function loadInitialDocument(view) {
+  const linesRef = collection(db, "documents", "main", "lines");
+  const snapshot = await getDocs(linesRef);
+
+  if (snapshot.empty) {
+    isInitialLoad = false;
+    return;
+  }
+
+  const lines = [];
+
+  snapshot.forEach((doc) => {
+    const lineNumber = Number(doc.id);
+    lines[lineNumber - 1] = doc.data().text || "";
+  });
+
+  const fullText = lines.join("\n");
+
+  isApplyingRemote = true;
+
+  view.dispatch({
+    changes: {
+      from: 0,
+      to: view.state.doc.length,
+      insert: fullText
+    }
+  });
+
+  isApplyingRemote = false;
+  isInitialLoad = false;
+}
+
+
 
 
 const requestMoveLine = StateEffect.define();
@@ -1051,6 +1126,8 @@ const view = new EditorView({
   parent: document.getElementById("editor")
 });
 
+
+await loadInitialDocument(view);
 startSync(view);
 
 // ★ 追加：エクスポート用に保持
