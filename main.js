@@ -181,6 +181,9 @@ function toggleListIfNeeded(view, pos) {
   const hasCheckbox = Boolean(match[3]);
   const checkboxText = match[3]; // "[ ] " or "[x] "
   const content = match[4];
+	if (content.trim() === "") {
+	  return;
+	}
 
   const bulletFrom = line.from + indentSpaces.length;
 
@@ -203,13 +206,16 @@ function toggleListIfNeeded(view, pos) {
     next = `${indentSpaces}- ${content}`;
   }
 
-  view.dispatch({
-    changes: {
-      from: line.from,
-      to: line.to,
-      insert: next
-    }
-  });
+	view.dispatch({
+	  changes: {
+	    from: line.from,
+	    to: line.to,
+	    insert: next
+	  },
+	  selection: {
+	    anchor: line.from + next.length
+	  }
+	});
 }
 
 
@@ -391,7 +397,7 @@ function blockUrlBuilders(blockLines,action) {
   }else if(action === "SaveLog"){
 	  const bodyText = blockLines.join("\n").replace(/  /g," ").replace(/\- /g," ");
 		const body = encodeURIComponent(bodyText);
-	  return `shortcuts://run-shortcut?name=Choiyakiをmd保存&input=${body}`;
+	  return `shortcuts://run-shortcut?name=AddObsidian&input=${body}`;
   }
 };
 
@@ -509,9 +515,9 @@ function showBlockMenu({ view, lineNumber, anchorEl }) {
 	
 	  const blockLines = getBlockText(view.state, lineNumber);
 		if (!blockLines || blockLines.length === 0) {
-  console.warn("ブロックテキスト取得失敗", lineNumber);
-  return;
-}
+		  console.warn("ブロックテキスト取得失敗", lineNumber);
+		  return;
+		}
 	
 	  const url = blockUrlBuilders(blockLines,action);
 		
@@ -868,6 +874,43 @@ const headerFocusWatcher = EditorView.domEventHandlers({
   }
 });
 
+
+function exportDocument(view) {
+  if (!view) return;
+  // --- タイトル ---
+  const title =
+    localStorage.getItem("cm6-title")?.trim() || "無題";
+
+  // --- 本文 ---
+  const bodyText = title + "\n" + view.state.doc
+    .toString()
+    .replace(/  /g, " ")
+    .replace(/\- /g, " ");
+
+  if (!bodyText.trim()) {
+    alert("本文が空です");
+    return;
+  }
+
+  // --- URL生成（ここだけ用途に応じて変える） ---
+  const url =
+    `shortcuts://run-shortcut?name=Choiyakiをmd保存&input=${encodeURIComponent(bodyText)}`;
+
+  // --- 実行 ---
+  window.location.href = url;
+}
+
+// ===== Export button handler =====
+const exportBtn = document.querySelector(".header-btn.right");
+
+if (exportBtn) {
+  exportBtn.addEventListener("click", () => {
+    exportDocument(window.editorView);
+  });
+} else {
+  console.warn("export button not found");
+}
+
 const STORAGE_KEY = "cm6-line-editor-doc";
 
 function saveToLocal(state) {
@@ -953,7 +996,10 @@ const state = EditorState.create({
 });
 
 
-new EditorView({
-	state,
+const view = new EditorView({
+  state,
   parent: document.getElementById("editor")
 });
+
+// ★ 追加：エクスポート用に保持
+window.editorView = view;
