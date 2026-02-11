@@ -29,18 +29,15 @@ import {
   db,
   doc,
   setDoc,
-  updateDoc,
+  updateDoc
 } from "./firebase.js";
 
 import {
   collection,
-  onSnapshot
+  onSnapshot,
+	getDocs
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
-import {
-  getDocs,
-  collection
-} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 let isInitialLoad = true;
 let isApplyingRemote = false;
@@ -102,17 +99,6 @@ function applyRemoteLine(view, lineNumber, text) {
 
   isApplyingRemote = false;
 }
-
-onSnapshot(linesRef, (snapshot) => {
-  snapshot.docChanges().forEach((change) => {
-    if (change.type === "removed") return;
-
-    const lineNumber = Number(change.doc.id);
-    const { text } = change.doc.data();
-
-    applyRemoteLine(view, lineNumber, text);
-  });
-});
 
 async function loadInitialDocument(view) {
   const linesRef = collection(db, "documents", "main", "lines");
@@ -1127,7 +1113,7 @@ const view = new EditorView({
 });
 
 
-await loadInitialDocument(view);
+//await loadInitialDocument(view);
 startSync(view);
 
 // ★ 追加：エクスポート用に保持
