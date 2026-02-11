@@ -85,7 +85,10 @@ const syncExtension = EditorView.updateListener.of(update => {
 });
 
 function applyRemoteLine(view, lineNumber, text) {
-  const line = view.state.doc.line(lineNumber);
+  const doc = view.state.doc;
+  if (lineNumber < 1 || lineNumber > doc.lines) return;
+
+  const line = doc.line(lineNumber);
 
   isApplyingRemote = true;
 
@@ -1113,7 +1116,7 @@ const view = new EditorView({
 });
 
 
-//await loadInitialDocument(view);
+await loadInitialDocument(view);
 startSync(view);
 
 // ★ 追加：エクスポート用に保持
