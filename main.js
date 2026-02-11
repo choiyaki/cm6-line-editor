@@ -25,6 +25,55 @@ import {
   indentOnInput
 } from "https://esm.sh/@codemirror/language";
 
+import {
+  db,
+  doc,
+  setDoc,
+  updateDoc,
+} from "./firebase.js";
+
+import {
+  collection,
+  onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+function startSync(view) {
+  const linesRef = collection(db, "documents", "main", "lines");
+
+  onSnapshot(linesRef, (snapshot) => {
+    snapshot.docChanges().forEach((change) => {
+      const lineNumber = Number(change.doc.id);
+      const data = change.doc.data();
+
+      console.log("remote change", lineNumber, data.text);
+    });
+  });
+}
+
+async function saveLine(lineNumber, text) {
+  const ref = doc(db, "documents", "main", "lines", String(lineNumber));
+
+  await setDoc(ref, {
+    text,
+    updatedAt: Date.now()
+  });
+}
+
+const syncExtension = EditorView.updateListener.of(update => {
+  if (!update.docChanged) return;
+
+  update.changes.iterChanges((fromA, toA, fromB, toB) => {
+    const startLine = update.state.doc.lineAt(fromB).number;
+    const endLine   = update.state.doc.lineAt(toB).number;
+
+    for (let i = startLine; i <= endLine; i++) {
+      const line = update.state.doc.line(i);
+      saveLine(i, line.text);
+    }
+  });
+});
+
+
 const requestMoveLine = StateEffect.define();
 
 
@@ -991,7 +1040,8 @@ const state = EditorState.create({
       ...historyKeymap
     ]),
 		blockHeadGutter,
-		blockBodyDecoration
+		blockBodyDecoration,
+		syncExtension
   ]
 });
 
@@ -1000,6 +1050,8 @@ const view = new EditorView({
   state,
   parent: document.getElementById("editor")
 });
+
+startSync(view);
 
 // ★ 追加：エクスポート用に保持
 window.editorView = view;
