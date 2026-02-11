@@ -4,7 +4,8 @@ import {
   gutter,
   GutterMarker,
   keymap,
-	Decoration
+	Decoration,
+	WidgetType
 } from "https://esm.sh/@codemirror/view";
 
 import {
@@ -59,29 +60,6 @@ const fixEmptyLineBackspace = keymap.of([
   }
 ]);
 
-const fixEmptyLineClick = EditorView.domEventHandlers({
-  mousedown(event, view) {
-    if (event.button !== 0) return;
-
-    const pos = view.posAtCoords({
-      x: event.clientX,
-      y: event.clientY
-    });
-
-    if (pos == null) return;
-
-    const line = view.state.doc.lineAt(pos);
-
-    // ★ 空行ならカーソルを行頭に固定
-    if (line.from === line.to) {
-      view.dispatch({
-        selection: { anchor: line.from }
-      });
-
-      event.preventDefault();
-    }
-  }
-});
 
 
 const listEnterKeymap = keymap.of([{
@@ -235,79 +213,13 @@ function toggleListIfNeeded(view, pos) {
 }
 
 
-function indentCurrentLine(view) {
-  const { state } = view;
-  const pos = state.selection.main.head;
-  const line = state.doc.lineAt(pos);
 
-  const parsed = parseLine(line.text);
 
-  let next;
-
-  if (!parsed.isList) {
-    // 1回目：リスト化
-    next = {
-      indent: 0,
-      isList: true,
-      content: parsed.content
-    };
-  } else {
-    // 2回目以降：インデント
-    next = {
-      indent: parsed.indent + 1,
-      isList: true,
-      content: parsed.content
-    };
-  }
-
-  view.dispatch({
-    changes: {
-      from: line.from,
-      to: line.to,
-      insert: buildLine(next)
-    }
-  });
-}
-
-function outdentCurrentLine(view) {
-  const { state } = view;
-  const pos = state.selection.main.head;
-  const line = state.doc.lineAt(pos);
-
-  const parsed = parseLine(line.text);
-
-  if (!parsed.isList) return;
-
-  let next;
-
-  if (parsed.indent > 0) {
-    // インデントを戻す
-    next = {
-      indent: parsed.indent - 1,
-      isList: true,
-      content: parsed.content
-    };
-  } else {
-    // リスト解除
-    next = {
-      indent: 0,
-      isList: false,
-      content: parsed.content
-    };
-  }
-
-  view.dispatch({
-    changes: {
-      from: line.from,
-      to: line.to,
-      insert: buildLine(next)
-    }
-  });
-}
 
 function swipeIndentExtension() {
   return EditorView.domEventHandlers({
     touchstart(event, view) {
+			if (!view.hasFocus) return;
       if (event.touches.length !== 1) return;
 
       const t = event.touches[0];
@@ -362,94 +274,7 @@ function swipeIndentExtension() {
 }
 
 
-// --- 右半分専用の操作（タップでカーソル、上下スワイプで行入れ替え） ---
-function rightSideSwipeMoveExtension() {
-  let startX = 0;
-  let startY = 0;
-  let hasMovedInThisSwipe = false;
-  let isRightSide = false;
 
-  return EditorView.domEventHandlers({
-		touchstart(event, view) {
-		  if (event.touches.length !== 1) return;
-		
-		  const rect = view.dom.getBoundingClientRect();
-		  const touch = event.touches[0];
-		  const x = touch.clientX - rect.left;
-		
-		  if (x > rect.width * 0.75) {
-		    isRightSide = true;
-		    startX = touch.clientX;
-		    startY = touch.clientY;
-		    hasMovedInThisSwipe = false;
-				
-				if (!view.hasFocus) {
-          view.focus();
-          const pos = view.posAtCoords({ x: touch.clientX, y: touch.clientY });
-          if (pos !== null) {
-            view.dispatch({ 
-              selection: { anchor: pos, head: pos },
-              scrollIntoView: true // ★ false から true に変更
-            });
-          }
-        }
-
-
-		
-		    // --- 追加: キーボード未表示時でもフォーカスを強制する ---
-		    if (!view.hasFocus) {
-		      view.focus();
-		    }
-		
-		    // 右半分でのスクロールを防止
-		    if (event.cancelable) event.preventDefault();
-		  } else {
-		    isRightSide = false;
-		  }
-		},
-		
-
-
-    touchmove(event, view) {
-      if (!isRightSide || hasMovedInThisSwipe) return;
-
-      const touch = event.touches[0];
-      const diffY = touch.clientY - startY;
-      const threshold = 30;
-
-      if (Math.abs(diffY) > threshold) {
-        if (diffY < 0) {
-          moveLineUp(view);
-        } else {
-          moveLineDown(view);
-        }
-        hasMovedInThisSwipe = true;
-      }
-      
-      // 右側での移動中は常にスクロールを阻止
-      if (isRightSide && event.cancelable) event.preventDefault();
-    },
-
-    touchend(event, view) {
-      if (!isRightSide) return;
-
-      if (!hasMovedInThisSwipe) {
-        const touch = event.changedTouches[0];
-        const pos = view.posAtCoords({ x: touch.clientX, y: touch.clientY });
-        if (pos !== null) {
-          view.dispatch({
-            selection: { anchor: pos, head: pos },
-            scrollIntoView: true,
-            userEvent: "select"
-          });
-        }
-      }
-
-      isRightSide = false;
-      hasMovedInThisSwipe = false;
-    }
-  });
-}
 
 function isBlockStartSafe(state, lineDesc) {
   if (!lineDesc || lineDesc.from == null) return false;
@@ -463,55 +288,28 @@ function isBlockStartSafe(state, lineDesc) {
   return prev.text.length === 0;
 }
 
-function blockHeight(view, startLineDesc) {
-  const state = view.state;
-  const doc = state.doc;
-
-  // gutter から渡ってくるのは lineDesc
-  const startLine = doc.lineAt(startLineDesc.from);
-
-  let height = 0;
-
-  for (let n = startLine.number; n <= doc.lines; n++) {
-    const line = doc.line(n);
-
-    // 各行の実描画高さを加算
-    const block = view.lineBlockAt(line.from);
-    height += block.height;
-
-    // 先頭以外で空行が来たらブロック終了
-    if (n !== startLine.number && line.text.length === 0) {
-      break;
-    }
-  }
-
-  return height;
-}
-class BlockGutterMarker extends GutterMarker {
-  constructor(height, lineFrom, view) {
+class BlockHeadButtonMarker extends GutterMarker {
+  constructor(view, from) {
     super();
-    this.height = height;
-    this.lineFrom = lineFrom; // ★ 行番号ではなく from を保存
     this.view = view;
+    this.from = from; // ★ line.number ではなく from
   }
 
   toDOM() {
     const el = document.createElement("div");
-    el.className = "cm-block-gutter";
-    el.style.height = this.height + "px";
+    el.className = "cm-block-head-button";
+    el.textContent = "●";
 
     el.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
 
-      const state = this.view.state;
-
-      // ★ クリック時に「今の」lineNumber を計算
-      const line = state.doc.lineAt(this.lineFrom);
+      const line = this.view.state.doc.lineAt(this.from);
+      const lineNumber = line.number;
 
       showBlockMenu({
         view: this.view,
-        lineNumber: line.number,
+        lineNumber,
         anchorEl: el
       });
     });
@@ -520,61 +318,76 @@ class BlockGutterMarker extends GutterMarker {
   }
 }
 
-const blockGutter = gutter({
-  class: "cm-block-gutter-container",
+const blockHeadGutter = gutter({
+  class: "cm-block-head-gutter",
 
   lineMarker(view, line) {
-    if (!isBlockStartSafe(view.state, { from: line.from })) return null;
+    // ブロック先頭以外は描画しない
+    if (!isBlockStartSafe(view.state, { from: line.from })) {
+      return null;
+    }
 
-    const h = blockHeight(view, line);
-    return new BlockGutterMarker(h, line.from, view);
+    return new BlockHeadButtonMarker(
+      view,
+      line.from
+    );
   }
 });
 
+
 function getBlockText(state, startLineNumber) {
-	console.log("ok");
-  const lines = [];
   const doc = state.doc;
-  let n = startLineNumber;
+  const lines = [];
 
-  while (n <= doc.lines) {
-    const line = doc.line(n);
-    if (n !== startLineNumber && line.text.length === 0) break;
+  let lineNo = startLineNumber;
+  const maxLine = doc.lines;
 
-    lines.push(line.text);
-    n++;
+  while (lineNo <= maxLine) {
+    const line = doc.line(lineNo);
+    const text = line.text;
+
+    // 完全な空行でブロック終了
+    if (text.trim() === "") break;
+
+    // 次のブロック開始で止めたいなら
+    if (
+      lineNo !== startLineNumber &&
+      isBlockStartSafe(state, { from: line.from })
+    ) {
+      break;
+    }
+
+    lines.push(text);
+    lineNo++;
   }
 
   return lines;
 }
 
-function buildScrapboxUrl(blockLines,actions) {
-  const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm = String(today.getMonth() + 1).padStart(2, "0");
-  const dd = String(today.getDate()).padStart(2, "0");
-  const date = encodeURIComponent(`${yyyy}${mm}${dd}日誌`);
-  const bodyText = blockLines.join("\n").replace(/  /g," ").replace(/\- /g," ");
-	const body = encodeURIComponent(bodyText);
-  return `sbporter://scrapbox.io/choiyaki/${date}?body=${body}`;
+function getCurrentTitle() {
+  const TITLE_KEY = "cm6-title";
+
+  const saved = localStorage.getItem(TITLE_KEY);
+  if (saved && saved.trim() !== "") {
+    return saved.trim();
+  }
+
+  // フォールバック（未保存・空のとき）
+  return "無題";
 }
 
 function blockUrlBuilders(blockLines,action) {
-	const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm = String(today.getMonth() + 1).padStart(2, "0");
-  const dd = String(today.getDate()).padStart(2, "0");
+	const title = getCurrentTitle();
 	if(action === "scrapbox") {
-		alert(action)
-    const date = encodeURIComponent(`${yyyy}${mm}${dd}日誌`);
+    const date = encodeURIComponent(`${title}日誌`);
 	  const bodyText = blockLines.join("\n").replace(/  /g," ").replace(/\- /g," ");
+		
 		const body = encodeURIComponent(bodyText);
 	  return `sbporter://scrapbox.io/choiyaki/${date}?body=${body}`;
   } else if(action === "choidiary"){
-		const date = `${yyyy}${mm}${dd}`;
 	  const bodyText = blockLines.join("\n").replace(/  /g," ").replace(/\- /g," ");
 		const body = encodeURIComponent(bodyText);
-	  return `touch-https://scrapbox.io/choidiary/${date}?body=${body}`;
+	  return `touch-https://scrapbox.io/choidiary/${title}?body=${body}`;
   }else if(action === "SaveLog"){
 	  const bodyText = blockLines.join("\n").replace(/  /g," ").replace(/\- /g," ");
 		const body = encodeURIComponent(bodyText);
@@ -692,9 +505,13 @@ function showBlockMenu({ view, lineNumber, anchorEl }) {
   menu.addEventListener("click", e => {
 	  const action = e.target.dataset.action;
 	  if (!action) return;
+		console.log(lineNumber)
 	
 	  const blockLines = getBlockText(view.state, lineNumber);
-	
+		if (!blockLines || blockLines.length === 0) {
+  console.warn("ブロックテキスト取得失敗", lineNumber);
+  return;
+}
 	
 	  const url = blockUrlBuilders(blockLines,action);
 		
@@ -867,7 +684,189 @@ const hangingIndentPlugin = ViewPlugin.fromClass(
   }
 );
 
+function rightSideFocusedEditExtension() {
+  let startX = null;
+  let startY = null;
+  let isRightSide = false;
+  let hasHandledVertical = false;
 
+  return EditorView.domEventHandlers({
+    touchstart(event, view) {
+      if (!view.hasFocus) return;
+      if (event.touches.length !== 1) return;
+
+      const t = event.touches[0];
+      const rect = view.dom.getBoundingClientRect();
+      const localX = t.clientX - rect.left;
+
+      // ★ 右側25%のみ編集対象
+      if (localX < rect.width * 0.75) return;
+
+      isRightSide = true;
+      startX = t.clientX;
+      startY = t.clientY;
+      hasHandledVertical = false;
+
+      // ★ 右側編集エリアでは最初からスクロール権限を奪う
+      if (event.cancelable) event.preventDefault();
+    },
+
+    touchmove(event, view) {
+      if (!isRightSide) return;
+      if (startX == null || startY == null) return;
+
+      const t = event.touches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+      const threshold = 24;
+
+      // 横が強い → 何もしない（インデント側に任せる）
+      if (absX > absY) return;
+
+      // 縦が弱い → 無視
+      if (absY < threshold) return;
+
+      if (!hasHandledVertical) {
+        if (dy < 0) {
+          moveLineUp(view);
+        } else {
+          moveLineDown(view);
+        }
+        hasHandledVertical = true;
+      }
+
+      // ★ 編集中は常にスクロール禁止
+      if (event.cancelable) event.preventDefault();
+    },
+
+    touchend() {
+      startX = null;
+      startY = null;
+      isRightSide = false;
+      hasHandledVertical = false;
+    }
+  });
+}
+
+function indentCurrentLine(view) {
+  const { state } = view;
+  const sel = state.selection.main;
+  const pos = sel.head;
+  const line = state.doc.lineAt(pos);
+
+  const column = pos - line.from; // ★ 列位置を保存
+  const parsed = parseLine(line.text);
+
+  let next;
+  if (!parsed.isList) {
+    next = { indent: 0, isList: true, content: parsed.content };
+  } else {
+    next = {
+      indent: parsed.indent + 1,
+      isList: true,
+      content: parsed.content
+    };
+  }
+
+  const newText = buildLine(next);
+
+  view.dispatch({
+    changes: {
+      from: line.from,
+      to: line.to,
+      insert: newText
+    },
+    selection: {
+      anchor: line.from + Math.min(column, newText.length) + 2
+    }
+  });
+}
+
+function outdentCurrentLine(view) {
+  const { state } = view;
+  const sel = state.selection.main;
+  const pos = sel.head;
+  const line = state.doc.lineAt(pos);
+
+  const column = pos - line.from; // ★ 列位置を保存
+  const parsed = parseLine(line.text);
+
+  if (!parsed.isList) return;
+
+  let next;
+  if (parsed.indent > 0) {
+    next = {
+      indent: parsed.indent - 1,
+      isList: true,
+      content: parsed.content
+    };
+  } else {
+    next = {
+      indent: 0,
+      isList: false,
+      content: parsed.content
+    };
+  }
+
+  const newText = buildLine(next);
+
+  view.dispatch({
+    changes: {
+      from: line.from,
+      to: line.to,
+      insert: newText
+    },
+    selection: {
+      anchor: line.from + Math.min(column, newText.length) - 2
+    }
+  });
+}
+
+
+
+// ===== Header auto hide controller =====
+const headerEl = document.getElementById("app-header");
+
+let editorFocused = false;
+let keyboardVisible = false;
+
+// --- キーボード検知（iOS / Android 共通で安定） ---
+if (window.visualViewport) {
+  const baseHeight = window.visualViewport.height;
+
+  visualViewport.addEventListener("resize", () => {
+		  const diff = baseHeight - visualViewport.height;
+		
+		  // ★ ソフトウェアキーボード判定
+		  keyboardVisible = diff > 120;
+    updateHeaderVisibility();
+  });
+}
+
+// --- 表示制御 ---
+function updateHeaderVisibility() {
+  if (editorFocused && keyboardVisible) {
+    headerEl.classList.add("is-hidden");
+    document.body.classList.add("header-hidden");   // ★ 追加
+  } else {
+    headerEl.classList.remove("is-hidden");
+    document.body.classList.remove("header-hidden"); // ★ 追加
+  }
+}
+
+const headerFocusWatcher = EditorView.domEventHandlers({
+  focus() {
+    editorFocused = true;
+    updateHeaderVisibility();
+  },
+  blur() {
+    editorFocused = false;
+    updateHeaderVisibility();
+  }
+});
 
 const STORAGE_KEY = "cm6-line-editor-doc";
 
@@ -888,18 +887,59 @@ const autosaveExtension = EditorView.updateListener.of(update => {
   }
 });
 
+
+
+
+const titleInput = document.querySelector(".header-title");
+
+const TITLE_KEY = "cm6-title";
+
+/* ===== load ===== */
+const savedTitle = localStorage.getItem(TITLE_KEY);
+if (savedTitle !== null) {
+  titleInput.value = savedTitle;
+}
+
+/* ===== save ===== */
+function saveTitle() {
+  const value = titleInput.value.trim();
+  if (value === "") {
+    localStorage.removeItem(TITLE_KEY);
+  } else {
+    localStorage.setItem(TITLE_KEY, value);
+  }
+}
+
+titleInput.addEventListener("input", saveTitle);
+titleInput.addEventListener("blur", saveTitle);
+
+let composing = false;
+
+titleInput.addEventListener("compositionstart", () => {
+  composing = true;
+});
+
+titleInput.addEventListener("compositionend", () => {
+  composing = false;
+  saveTitle();
+});
+
+titleInput.addEventListener("input", () => {
+  if (!composing) saveTitle();
+});
+
 const state = EditorState.create({
   doc: loadFromLocal(),
   extensions: [
 		EditorView.lineWrapping,
+		headerFocusWatcher,
 		swipeIndentExtension(),
-		rightSideSwipeMoveExtension(),
+		rightSideFocusedEditExtension(),
 		listToggleExtension(),
     history(),
     indentOnInput(),
 		autosaveExtension,
 		fixEmptyLineBackspace,
-		fixEmptyLineClick,
 		listEnterKeymap,
 		hangingIndentPlugin,
 		nonEmptyLineDecoration,
@@ -907,7 +947,7 @@ const state = EditorState.create({
       ...defaultKeymap,
       ...historyKeymap
     ]),
-		blockGutter,
+		blockHeadGutter,
 		blockBodyDecoration
   ]
 });

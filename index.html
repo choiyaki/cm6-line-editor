@@ -24,7 +24,7 @@
 }
 
 .cm-line.cm-non-empty-line {
-  background: #fff8e6;
+  /*background: #fff8e6;*/
   border-radius: 6px;
 }
 		
@@ -73,6 +73,71 @@
 		  z-index: 1000;
 		}
 		
+/* ===== header hide when editing ===== */
+#app-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+
+  padding: 0 8px;
+
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+  z-index: 1000;
+
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+#app-header.is-hidden {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.header-btn {
+  height: 28px;
+  padding: 0 10px;
+
+  border: none;
+  border-radius: 6px;
+  background: #f2f2f2;
+
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.header-btn:active {
+  background: #e0e0e0;
+}
+
+.header-title {
+  width: 95%;
+  height: 28px;
+
+  padding: 0 8px;
+  border: none;
+  border-radius: 6px;
+
+  background: #f7f7f7;
+  text-align: center;
+
+  font-size: 16px;
+  font-weight: 500;
+  outline: none;
+}
+
+.header-title:focus {
+  background: #eef2ff;
+}
+
+		
 		/* ===== main ===== */
 		
 		#app-main {
@@ -93,19 +158,27 @@
 		  position: relative;
 		}
 		
-		/* 右半分を薄いブルーにするレイヤー */
-		.cm-line.cm-non-empty-line::after {
-		  content: "";
-		  position: absolute;
-		  top: 0;
-		  right: 0;
-		  width: 25%; /* 右半分 */
-		  height: 100%;
-		  background-color: rgba(0, 122, 255, 0.03); /* ほんのりブルー */
-		  pointer-events: none; /* タップ操作を邪魔しない */
-		  z-index: 0;
-		  border-left: 1px dashed rgba(0, 122, 255, 0.1); /* 境界線を薄く表示（任意） */
-		}
+		.cm-editor::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 25%;
+  height: 100%;
+
+  background-color: rgba(0, 122, 255, 0.03);
+  border-left: 1px dashed rgba(0, 122, 255, 0.1);
+
+  pointer-events: none;
+  z-index: 0;
+}
+
+.cm-scroller,
+.cm-content,
+.cm-gutters {
+  position: relative;
+  z-index: 1;
+}
 		/* 非空行だけ右側操作エリアを表示 */
 
 /* 空行では右側操作エリアを完全に消す 
@@ -154,35 +227,63 @@
 }
 
 .block-gutter-btn {
-  width: 20px;
+  width: 18px;
   margin-left: 2px;
   background: rgba(0, 122, 255, 0.18);
   border-radius: 3px;
   cursor: pointer;
 }
 
-.cm-block-gutter-container {
-  width: 20px;
-	background-color: white;
+.cm-block-head-gutter {
+  width: 1.5em;
 }
 
-.cm-block-gutter {
-  width: 20px;
-  margin-left: 2px;
-  background: rgba(0, 122, 255, 0.18);
-  border-radius: 4px;
+.cm-block-head-button {
+  width: 1.2em;
+  height: 1.2em;
+	
+  margin: 0.5em auto;
+
+  border-radius: 50%;
+  background: #d6d0c4;
+  color: white;
+
+  font-size: 10px;
+	font-weight: bold;
+  line-height: 1.2em;
+  text-align: center;
+
   cursor: pointer;
 }
 
+.cm-block-head-button:hover {
+  background: #bfb8a8;
+}
 
+
+/* ===== main padding control ===== */
+#app-main {
+  transition: padding-top 0.25s ease;
+}
+
+body.header-hidden #app-main {
+  padding-top: 0;
+}
 
   </style>
 </head>
 <body>
-  <header id="app-header">
-    <div class="header-title" contenteditable="true">タイトル</div>
-    <button class="header-button">Export</button>
-  </header>
+	<header id="app-header">
+	  <button class="header-btn left">☰</button>
+	
+	  <input
+	    type="text"
+	    class="header-title"
+	    placeholder="タイトル"
+	  />
+	
+	  <button class="header-btn right">📤</button>
+	</header>
 
   <main id="app-main">
     <div id="editor-scale-wrapper">
