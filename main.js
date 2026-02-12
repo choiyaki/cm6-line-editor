@@ -26,100 +26,27 @@ import {
 } from "https://esm.sh/@codemirror/language";
 
 import {
-  db,
-  doc,
-  setDoc,
-  updateDoc
+  db
 } from "./firebase.js";
 
 import {
-  collection,
+  doc,
+  setDoc,
   onSnapshot,
-	getDocs
+  getDoc,
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+const docRef = doc(db, "documents", "main");
 
-let isInitialLoad = true;
 let isApplyingRemote = false;
 
-function startSync(view) {
-  const linesRef = collection(db, "documents", "main", "lines");
-
-  onSnapshot(linesRef, (snapshot) => {
-    if (isInitialLoad) return;
-
-    snapshot.docChanges().forEach((change) => {
-      if (change.type === "removed") return;
-
-      const lineNumber = Number(change.doc.id);
-      const { text } = change.doc.data();
-
-      applyRemoteLine(view, lineNumber, text);
-    });
-  });
-}
-
-function saveLine(lineNumber, text) {
-  if (isApplyingRemote) return;
-
-  const ref = doc(db, "documents", "main", "lines", String(lineNumber));
-
-  setDoc(ref, {
-    text,
-    updatedAt: Date.now()
-  });
-}
-
-const syncExtension = EditorView.updateListener.of(update => {
-  if (!update.docChanged) return;
-
-  update.changes.iterChanges((fromA, toA, fromB, toB) => {
-    const startLine = update.state.doc.lineAt(fromB).number;
-    const endLine   = update.state.doc.lineAt(toB).number;
-
-    for (let i = startLine; i <= endLine; i++) {
-      const line = update.state.doc.line(i);
-      saveLine(i, line.text);
-    }
-  });
-});
-
-function applyRemoteLine(view, lineNumber, text) {
-  const doc = view.state.doc;
-  if (lineNumber < 1 || lineNumber > doc.lines) return;
-
-  const line = doc.line(lineNumber);
-
-  isApplyingRemote = true;
-
-  view.dispatch({
-    changes: {
-      from: line.from,
-      to: line.to,
-      insert: text
-    }
-  });
-
-  isApplyingRemote = false;
-}
-
 async function loadInitialDocument(view) {
-  const linesRef = collection(db, "documents", "main", "lines");
-  const snapshot = await getDocs(linesRef);
+  const snap = await getDoc(docRef);
+  if (!snap.exists()) return;
 
-  if (snapshot.empty) {
-    isInitialLoad = false;
-    return;
-  }
-
-  const lines = [];
-
-  snapshot.forEach((doc) => {
-    const lineNumber = Number(doc.id);
-    lines[lineNumber - 1] = doc.data().text || "";
-  });
-
-  const fullText = lines.join("\n");
+  const { text } = snap.data();
+  if (typeof text !== "string") return;
 
   isApplyingRemote = true;
 
@@ -127,13 +54,65 @@ async function loadInitialDocument(view) {
     changes: {
       from: 0,
       to: view.state.doc.length,
-      insert: fullText
+      insert: text
     }
   });
 
   isApplyingRemote = false;
-  isInitialLoad = false;
 }
+
+function startFullSync(view) {
+  onSnapshot(docRef, snap => {
+    if (!snap.exists()) return;
+    if (isApplyingRemote) return;
+
+    const { text } = snap.data();
+    if (typeof text !== "string") return;
+
+    const current = view.state.doc.toString();
+    if (text === current) return;
+
+    isApplyingRemote = true;
+
+    view.dispatch({
+      changes: {
+        from: 0,
+        to: view.state.doc.length,
+        insert: text
+      }
+    });
+
+    isApplyingRemote = false;
+  });
+}
+
+let saveTimer = null;
+
+function scheduleSave(state) {
+  if (saveTimer) clearTimeout(saveTimer);
+
+  saveTimer = setTimeout(() => {
+    setDoc(
+      docRef,
+      {
+        text: state.doc.toString(),
+        updatedAt: Date.now(),
+        createdAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+  }, 500);
+}
+
+const syncExtension = EditorView.updateListener.of(update => {
+  if (!update.docChanged) return;
+  if (isApplyingRemote) return;
+
+  scheduleSave(update.state);
+});
+
+
+
 
 
 
@@ -1117,7 +1096,7 @@ const view = new EditorView({
 
 
 await loadInitialDocument(view);
-startSync(view);
+startFullSync(view);
 
 // ★ 追加：エクスポート用に保持
 window.editorView = view;
