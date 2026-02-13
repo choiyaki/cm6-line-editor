@@ -54,17 +54,9 @@ import {
 await setPersistence(auth, browserLocalPersistence);
 
 
+let isInitializing = true; // ★ 追加
 
 
-/*
-getRedirectResult(auth)
-  .then((result) => {
-    if (result?.user) {
-      console.log("Logged in:", result.user.displayName);
-    }
-  })
-  .catch(console.error);
-*/
 const loginBtn = document.getElementById("login-btn");
 const logoutBtn = document.getElementById("logout-btn");
 const menuUser = document.getElementById("menu-user");
@@ -91,23 +83,23 @@ logoutBtn.addEventListener("click", async () => {
 onAuthStateChanged(auth, async user => {
   
 	if (user) {
-		alert(user);
+		
     loginBtn.classList.add("hidden");
     logoutBtn.classList.remove("hidden");
 
     docRef = getUserDocRef(user.uid);
 
-    // ★ 必ず doc を作る（ここ超重要）
-    await setDoc(
-			
-      docRef,
-      { text: "", createdAt: serverTimestamp() },
-      { merge: true }
-    );
+    const snap = await getDoc(docRef);
+		if (!snap.exists()) {
+		  await setDoc(docRef, {
+		    text: "",
+		    createdAt: serverTimestamp()
+		  });
+		}
 
     startFirestoreSync(view, docRef);
   } else {
-		alert(user);
+		
     stopFirestoreSync();
     docRef = null;
   }
@@ -116,24 +108,32 @@ onAuthStateChanged(auth, async user => {
 let unsubscribe = null;
 
 async function startFirestoreSync(view, ref) {
-	if (!view) return;
+  if (!view) return;
   stopFirestoreSync();
 
-  // ★ ① 初回ロード（これがないとダメ）
+  isInitializing = true;
+
+  // --- 初回ロード ---
   const snap = await getDoc(ref);
   if (snap.exists()) {
     const text = snap.data().text ?? "";
     isApplyingRemote = true;
     view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: text }
+      changes: {
+        from: 0,
+        to: view.state.doc.length,
+        insert: text
+      }
     });
     isApplyingRemote = false;
   }
 
-  // ★ ② その後リアルタイム同期
+  isInitializing = false; // ★ ここで解除
+
+  // --- リアルタイム同期 ---
   unsubscribe = onSnapshot(ref, snap => {
     if (!snap.exists()) return;
-
+    if (isApplyingRemote) return;
     if (view.hasFocus || isComposing || isLocalEditing) return;
 
     const remoteText = snap.data().text ?? "";
@@ -236,13 +236,13 @@ function startFullSync(view) {
 
 const syncExtension = EditorView.updateListener.of(update => {
   if (!update.docChanged) return;
-  if (!docRef) return;          // ★ 追加
+  if (!docRef) return;
+  if (isInitializing) return; // ★ 追加
   if (isApplyingRemote) return;
   if (isComposing) return;
 
   scheduleSave(update.state);
 });
-
 
 
 
@@ -1150,6 +1150,8 @@ let saveTimer = null;         // debounce用
 
 function scheduleSave(state) {
   if (!docRef) return;
+  if (isInitializing) return; // ★ 追加
+  if (isApplyingRemote) return; // ★ 追加
   if (isComposing) return;
 
   if (saveTimer) clearTimeout(saveTimer);
