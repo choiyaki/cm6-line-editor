@@ -56,6 +56,22 @@ await setPersistence(auth, browserLocalPersistence);
 
 let isInitializing = true; // ★ 追加
 
+let pendingURLText = null;
+
+function extractTextFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get("text");
+  if (!raw) return null;
+
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+pendingURLText = extractTextFromURL();
+
 
 const loginBtn = document.getElementById("login-btn");
 const logoutBtn = document.getElementById("logout-btn");
@@ -128,7 +144,35 @@ async function startFirestoreSync(view, ref) {
     isApplyingRemote = false;
   }
 
-  isInitializing = false; // ★ ここで解除
+  isInitializing = false; // ★ Firestore同期完了
+
+  // ★ ここで URL テキストを適用
+  if (pendingURLText) {
+    isApplyingRemote = true;
+
+    view.dispatch({
+      changes: {
+        from: view.state.doc.length,
+        insert:
+          (view.state.doc.length > 0 ? "\n" : "") +
+          pendingURLText
+      }
+    });
+
+    isApplyingRemote = false;
+
+    pendingURLText = null;
+
+    // URL を消す（再適用防止）
+    history.replaceState(
+      null,
+      "",
+      window.location.pathname
+    );
+
+    // ★ URL由来の変更は即保存
+    scheduleSave(view.state);
+  }
 
   // --- リアルタイム同期 ---
   unsubscribe = onSnapshot(ref, snap => {
@@ -1428,7 +1472,7 @@ view.dispatch = tr => {
 };
 
 
-applyTextFromURL(view);
+//applyTextFromURL(view);
 
 // ★ 追加：エクスポート用に保持
 window.editorView = view;
