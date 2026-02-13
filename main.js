@@ -85,9 +85,10 @@ onAuthStateChanged(auth, async user => {
     logoutBtn.classList.remove("hidden");
 
     docRef = getUserDocRef(user.uid);
-
+alert(docRef);
     // ★ 必ず doc を作る（ここ超重要）
     await setDoc(
+			
       docRef,
       { text: "", createdAt: serverTimestamp() },
       { merge: true }
