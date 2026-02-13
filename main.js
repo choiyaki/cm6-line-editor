@@ -5,7 +5,9 @@ import {
   GutterMarker,
   keymap,
 	Decoration,
-	WidgetType
+	WidgetType,
+	highlightActiveLine,
+  highlightActiveLineGutter
 } from "https://esm.sh/@codemirror/view";
 
 import {
@@ -1095,6 +1097,43 @@ titleInput.addEventListener("input", () => {
   if (!composing) saveTitle();
 });
 
+
+const focusedActiveLine = ViewPlugin.fromClass(
+  class {
+    decorations = Decoration.none;
+
+    update(update) {
+      if (
+        update.selectionSet ||
+        update.focusChanged ||
+        update.docChanged
+      ) {
+        this.decorations = this.build(update.view);
+      }
+    }
+
+    build(view) {
+      // ★ フォーカスがなければ一切描画しない
+      if (!view.hasFocus) {
+        return Decoration.none;
+      }
+
+      const line = view.state.doc.lineAt(
+        view.state.selection.main.head
+      );
+
+      return Decoration.set([
+        Decoration.line({
+          class: "cm-activeLine"
+        }).range(line.from)
+      ]);
+    }
+  },
+  {
+    decorations: v => v.decorations
+  }
+);
+
 const state = EditorState.create({
   doc: "",//loadFromLocal(),
   extensions: [
@@ -1102,6 +1141,7 @@ const state = EditorState.create({
 		headerFocusWatcher,
 		imeWatcher,
 		syncExtension,
+		focusedActiveLine,
 		swipeIndentExtension(),
 		rightSideFocusedEditExtension(),
 		listToggleExtension(),
