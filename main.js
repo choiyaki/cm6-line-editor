@@ -173,7 +173,7 @@ function isBlockSeparatorLine(text) {
 let docRef = null;
 
 function getUserDocRef(uid) {
-  return doc(db, "users", uid, "documents", "main");
+  return doc(db, "users", uid, "memos", "main");
 }
 
 
