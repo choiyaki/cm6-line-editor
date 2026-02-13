@@ -80,12 +80,14 @@ logoutBtn.addEventListener("click", async () => {
 
 
 onAuthStateChanged(auth, async user => {
-  if (user) {
+  
+	if (user) {
+		alert(user);
     loginBtn.classList.add("hidden");
     logoutBtn.classList.remove("hidden");
 
     docRef = getUserDocRef(user.uid);
-alert(docRef);
+
     // ★ 必ず doc を作る（ここ超重要）
     await setDoc(
 			
@@ -96,6 +98,7 @@ alert(docRef);
 
     startFirestoreSync(view, docRef);
   } else {
+		alert("null");
     stopFirestoreSync();
     docRef = null;
   }
