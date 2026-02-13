@@ -79,30 +79,31 @@ logoutBtn.addEventListener("click", async () => {
 
 
 
-onAuthStateChanged(auth, user => {
+onAuthStateChanged(auth, async user => {
   if (user) {
     loginBtn.classList.add("hidden");
     logoutBtn.classList.remove("hidden");
-    menuUser.textContent = user.displayName ?? "Anonymous";
-    menuUser.classList.remove("hidden");
 
     docRef = getUserDocRef(user.uid);
-    startFirestoreSync(view, docRef);
 
+    // ★ 必ず doc を作る（ここ超重要）
+    await setDoc(
+      docRef,
+      { text: "", createdAt: serverTimestamp() },
+      { merge: true }
+    );
+
+    startFirestoreSync(view, docRef);
   } else {
     stopFirestoreSync();
     docRef = null;
-
-    loginBtn.classList.remove("hidden");
-    logoutBtn.classList.add("hidden");
-    menuUser.classList.add("hidden");
-    menuUser.textContent = "";
   }
 });
 
 let unsubscribe = null;
 
 async function startFirestoreSync(view, ref) {
+	if (!view) return;
   stopFirestoreSync();
 
   // ★ ① 初回ロード（これがないとダメ）
@@ -180,7 +181,7 @@ function getUserDocRef(uid) {
 }
 
 
-
+/*
 function startFullSync(view) {
   onSnapshot(docRef, snap => {
     if (!snap.exists()) return;
@@ -218,19 +219,16 @@ function startFullSync(view) {
   });
 }
 
-
+*/
 
 const syncExtension = EditorView.updateListener.of(update => {
   if (!update.docChanged) return;
+  if (!docRef) return;          // ★ 追加
   if (isApplyingRemote) return;
-
-  // ★ IME中は保存しない
   if (isComposing) return;
 
-  // ★ 英数入力などは debounce 保存
   scheduleSave(update.state);
 });
-
 
 
 
