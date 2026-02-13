@@ -79,28 +79,69 @@ logoutBtn.addEventListener("click", async () => {
 
 
 
-onAuthStateChanged(auth, async (user) => {
+onAuthStateChanged(auth, user => {
   if (user) {
     loginBtn.classList.add("hidden");
     logoutBtn.classList.remove("hidden");
     menuUser.textContent = user.displayName ?? "Anonymous";
     menuUser.classList.remove("hidden");
 
-    // ★ ここが重要
     docRef = getUserDocRef(user.uid);
-
-    await loadInitialDocument(view);
-    startFullSync(view);
+    startFirestoreSync(view, docRef);
 
   } else {
+    stopFirestoreSync();
+    docRef = null;
+
     loginBtn.classList.remove("hidden");
     logoutBtn.classList.add("hidden");
     menuUser.classList.add("hidden");
     menuUser.textContent = "";
-
-    docRef = null;
   }
 });
+
+let unsubscribe = null;
+
+function startFirestoreSync(view, ref) {
+  stopFirestoreSync();
+
+  unsubscribe = onSnapshot(ref, snap => {
+    if (!snap.exists()) return;
+
+    const remoteText = snap.data().text ?? "";
+    const current = view.state.doc.toString();
+
+    // フォーカス中・IME中・ローカル編集中は無視
+    if (view.hasFocus || isComposing || isLocalEditing) return;
+    if (remoteText === current) return;
+
+    isApplyingRemote = true;
+
+    const sel = view.state.selection.main;
+
+    view.dispatch({
+      changes: {
+        from: 0,
+        to: view.state.doc.length,
+        insert: remoteText
+      },
+      selection: {
+        anchor: Math.min(sel.anchor, remoteText.length),
+        head: Math.min(sel.head, remoteText.length)
+      }
+    });
+
+    isApplyingRemote = false;
+  });
+}
+
+function stopFirestoreSync() {
+  if (unsubscribe) {
+    unsubscribe();
+    unsubscribe = null;
+  }
+}
+
 
 const menuBtn = document.getElementById("menu-btn");
 const menuPanel = document.getElementById("menu-panel");
@@ -135,25 +176,7 @@ function getUserDocRef(uid) {
   return doc(db, "users", uid, "documents", "main");
 }
 
-async function loadInitialDocument(view) {
-  const snap = await getDoc(docRef);
-  if (!snap.exists()) return;
 
-  const { text } = snap.data();
-  if (typeof text !== "string") return;
-
-  isApplyingRemote = true;
-
-  view.dispatch({
-    changes: {
-      from: 0,
-      to: view.state.doc.length,
-      insert: text
-    }
-  });
-
-  isApplyingRemote = false;
-}
 
 function startFullSync(view) {
   onSnapshot(docRef, snap => {
@@ -1112,11 +1135,7 @@ let saveTimer = null;         // debounce用
 
 
 function scheduleSave(state) {
-  // ★ ログインしていなければ保存しない
-  if (!auth.currentUser) return;
   if (!docRef) return;
-
-  // ★ IME中は保存しない（保険）
   if (isComposing) return;
 
   if (saveTimer) clearTimeout(saveTimer);
