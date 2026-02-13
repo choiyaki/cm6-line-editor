@@ -1174,6 +1174,85 @@ function applyTextFromURL(view) {
 }
 
 
+function toggleListByKeyboard(view) {
+  const { state } = view;
+  const sel = state.selection.main;
+  if (!sel.empty) return true;
+
+  const line = state.doc.lineAt(sel.head);
+  const text = line.text;
+
+  const match = text.match(/^(\s*)(- )(\[(?: |x)\] )?(.*)$/);
+
+  let next;
+
+  if (!match) {
+    // 何もなし → リスト
+    next = `- ${text}`;
+  } else {
+    const indent = match[1];
+    const checkbox = match[3];
+    const content = match[4];
+
+    if (!checkbox) {
+      // リスト → チェック
+      next = `${indent}- [ ] ${content}`;
+    } else if (checkbox === "[ ] ") {
+      // チェック → 完了
+      next = `${indent}- [x] ${content}`;
+    } else {
+      // 完了 → 解除
+      next = content ? `${indent}${content}` : "";
+    }
+  }
+
+  view.dispatch({
+    changes: {
+      from: line.from,
+      to: line.to,
+      insert: next
+    },
+    selection: { anchor: line.from + next.length }
+  });
+
+  return true;
+}
+
+const listToggleKeymap = keymap.of([
+  {
+    key: "Mod-Enter",
+    run: toggleListByKeyboard
+  }
+]);
+
+const indentKeymap = keymap.of([
+  {
+    key: "Tab",
+    run(view) {
+      indentCurrentLine(view);
+      return true;
+    }
+  },
+  {
+    key: "Shift-Tab",
+    run(view) {
+      outdentCurrentLine(view);
+      return true;
+    }
+  }
+]);
+
+const moveLineKeymap = keymap.of([
+  {
+    key: "Alt-ArrowUp",
+    run: moveLineUp
+  },
+  {
+    key: "Alt-ArrowDown",
+    run: moveLineDown
+  }
+]);
+
 const state = EditorState.create({
   doc: "",//loadFromLocal(),
   extensions: [
@@ -1181,6 +1260,9 @@ const state = EditorState.create({
 		headerFocusWatcher,
 		imeWatcher,
 		syncExtension,
+		listToggleKeymap,
+		indentKeymap,
+		moveLineKeymap,
 		focusedActiveLine,
 		swipeIndentExtension(),
 		rightSideFocusedEditExtension(),
