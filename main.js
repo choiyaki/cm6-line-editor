@@ -39,8 +39,6 @@ import {
 
 const docRef = doc(db, "documents", "main");
 
-let isApplyingRemote = false;
-
 async function loadInitialDocument(view) {
   const snap = await getDoc(docRef);
   if (!snap.exists()) return;
@@ -66,6 +64,11 @@ function startFullSync(view) {
     if (!snap.exists()) return;
     if (isApplyingRemote) return;
 
+    // ★ 追加条件（核心）
+    if (isComposing) return;
+    if (isLocalEditing) return;
+    if (view.hasFocus) return; // ★ フォーカス中は触らない
+
     const { text } = snap.data();
     if (typeof text !== "string") return;
 
@@ -74,11 +77,18 @@ function startFullSync(view) {
 
     isApplyingRemote = true;
 
+    // ★ selection を維持する
+    const sel = view.state.selection.main;
+
     view.dispatch({
       changes: {
         from: 0,
         to: view.state.doc.length,
         insert: text
+      },
+      selection: {
+        anchor: Math.min(sel.anchor, text.length),
+        head: Math.min(sel.head, text.length)
       }
     });
 
@@ -86,28 +96,16 @@ function startFullSync(view) {
   });
 }
 
-let saveTimer = null;
 
-function scheduleSave(state) {
-  if (saveTimer) clearTimeout(saveTimer);
-
-  saveTimer = setTimeout(() => {
-    setDoc(
-      docRef,
-      {
-        text: state.doc.toString(),
-        updatedAt: Date.now(),
-        createdAt: serverTimestamp()
-      },
-      { merge: true }
-    );
-  }, 500);
-}
 
 const syncExtension = EditorView.updateListener.of(update => {
   if (!update.docChanged) return;
   if (isApplyingRemote) return;
 
+  // ★ IME中は保存しない
+  if (isComposing) return;
+
+  // ★ 英数入力などは debounce 保存
   scheduleSave(update.state);
 });
 
@@ -117,7 +115,6 @@ const syncExtension = EditorView.updateListener.of(update => {
 
 
 
-const requestMoveLine = StateEffect.define();
 
 
 const fixEmptyLineBackspace = keymap.of([
@@ -680,6 +677,7 @@ function cleanup(view) {
   view._swipeStartSelection = null;
 }
 
+
 function parseLine(lineText) {
   const match = lineText.match(/^(\s*)(- )?(.*)$/);
 
@@ -694,25 +692,6 @@ function buildLine({ indent, isList, content }) {
   const spaces = "  ".repeat(indent);
   const bullet = isList ? "- " : "";
   return spaces + bullet + content;
-}
-
-
-function getIndentInfo(lineText) {
-  const indentMatch = lineText.match(/^(\s*)/);
-  const baseIndent = indentMatch[1].length;
-
-  // checkbox
-  if (/^\s*- \[( |x)\] /.test(lineText)) {
-    return { indent: baseIndent + 6 };
-  }
-
-  // list
-  if (/^\s*- /.test(lineText)) {
-    return { indent: baseIndent + 2 };
-  }
-
-  // normal
-  return { indent: baseIndent };
 }
 
 
@@ -1003,6 +982,7 @@ if (exportBtn) {
   console.warn("export button not found");
 }
 
+/*
 const STORAGE_KEY = "cm6-line-editor-doc";
 
 function saveToLocal(state) {
@@ -1021,6 +1001,47 @@ const autosaveExtension = EditorView.updateListener.of(update => {
     saveToLocal(update.state);
   }
 });
+*/
+
+let isApplyingRemote = false; // Firestore反映中フラグ
+let isComposing = false;      // IME入力中
+let isLocalEditing = false;
+let saveTimer = null;         // debounce用
+
+
+
+function scheduleSave(state) {
+  if (saveTimer) clearTimeout(saveTimer);
+
+  saveTimer = setTimeout(() => {
+    setDoc(
+      docRef,
+      {
+        text: state.doc.toString(),
+        updatedAt: Date.now()
+      },
+      { merge: true }
+    );
+  }, 500);
+}
+
+const imeWatcher = EditorView.domEventHandlers({
+  compositionstart() {
+    isComposing = true;
+  },
+
+  compositionend(event, view) {
+    isComposing = false;
+
+    // ★ CM5と同じ：確定した瞬間に保存
+    scheduleSave(view.state);
+  }
+});
+
+
+
+
+
 
 
 
@@ -1064,16 +1085,18 @@ titleInput.addEventListener("input", () => {
 });
 
 const state = EditorState.create({
-  doc: loadFromLocal(),
+  doc: "",//loadFromLocal(),
   extensions: [
 		EditorView.lineWrapping,
 		headerFocusWatcher,
+		imeWatcher,
+		syncExtension,
 		swipeIndentExtension(),
 		rightSideFocusedEditExtension(),
 		listToggleExtension(),
     history(),
     indentOnInput(),
-		autosaveExtension,
+		//autosaveExtension,
 		fixEmptyLineBackspace,
 		listEnterKeymap,
 		hangingIndentPlugin,
@@ -1083,8 +1106,7 @@ const state = EditorState.create({
       ...historyKeymap
     ]),
 		blockHeadGutter,
-		blockBodyDecoration,
-		syncExtension
+		blockBodyDecoration
   ]
 });
 
@@ -1093,6 +1115,14 @@ const view = new EditorView({
   state,
   parent: document.getElementById("editor")
 });
+
+const originalDispatch = view.dispatch.bind(view);
+
+view.dispatch = tr => {
+  isLocalEditing = true;
+  originalDispatch(tr);
+  isLocalEditing = false;
+};
 
 
 await loadInitialDocument(view);
