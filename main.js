@@ -44,19 +44,28 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
   onAuthStateChanged,
-  signOut
+  signOut,
+	signInWithRedirect,
+  getRedirectResult
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 const auth = getAuth();
 const provider = new GoogleAuthProvider();
+
+getRedirectResult(auth)
+  .then((result) => {
+    if (result?.user) {
+      console.log("Logged in:", result.user.displayName);
+    }
+  })
+  .catch(console.error);
 
 const loginBtn = document.getElementById("login-btn");
 const logoutBtn = document.getElementById("logout-btn");
 const menuUser = document.getElementById("menu-user");
 
 loginBtn.addEventListener("click", async () => {
-  await signInWithPopup(auth, provider);
-  menuPanel.hidden = true;
+  await signInWithRedirect(auth, provider);
 });
 
 logoutBtn.addEventListener("click", async () => {
