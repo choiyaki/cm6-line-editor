@@ -102,35 +102,38 @@ onAuthStateChanged(auth, user => {
 
 let unsubscribe = null;
 
-function startFirestoreSync(view, ref) {
+async function startFirestoreSync(view, ref) {
   stopFirestoreSync();
 
+  // ★ ① 初回ロード（これがないとダメ）
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    const text = snap.data().text ?? "";
+    isApplyingRemote = true;
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: text }
+    });
+    isApplyingRemote = false;
+  }
+
+  // ★ ② その後リアルタイム同期
   unsubscribe = onSnapshot(ref, snap => {
     if (!snap.exists()) return;
 
+    if (view.hasFocus || isComposing || isLocalEditing) return;
+
     const remoteText = snap.data().text ?? "";
     const current = view.state.doc.toString();
-
-    // フォーカス中・IME中・ローカル編集中は無視
-    if (view.hasFocus || isComposing || isLocalEditing) return;
     if (remoteText === current) return;
 
     isApplyingRemote = true;
-
-    const sel = view.state.selection.main;
-
     view.dispatch({
       changes: {
         from: 0,
         to: view.state.doc.length,
         insert: remoteText
-      },
-      selection: {
-        anchor: Math.min(sel.anchor, remoteText.length),
-        head: Math.min(sel.head, remoteText.length)
       }
     });
-
     isApplyingRemote = false;
   });
 }
@@ -1142,13 +1145,15 @@ function scheduleSave(state) {
 
   saveTimer = setTimeout(() => {
     setDoc(
-      docRef,
-      {
-        text: state.doc.toString(),
-        updatedAt: serverTimestamp()
-      },
-      { merge: true }
-    );
+		  docRef,
+		  {
+		    text: state.doc.toString(),
+		    updatedAt: serverTimestamp()
+		  },
+		  { merge: true }
+		)
+		.then(() => console.log("🔥 saved"))
+		.catch(e => console.error("❌ save failed", e));
   }, 500);
 }
 
