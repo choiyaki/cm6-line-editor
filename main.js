@@ -1134,6 +1134,46 @@ const focusedActiveLine = ViewPlugin.fromClass(
   }
 );
 
+function getTextFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get("text");
+  if (!raw) return null;
+
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function applyTextFromURL(view) {
+  const text = getTextFromURL();
+  if (!text) return;
+
+  isApplyingRemote = true;
+
+  view.dispatch({
+    changes: {
+      from: view.state.doc.length,
+      insert:
+        (view.state.doc.length > 0 ? "\n" : "") + text
+    },
+    selection: {
+      anchor: view.state.doc.length + text.length + 1
+    }
+  });
+
+  isApplyingRemote = false;
+
+  // ★ URL は一度使ったら消す（超重要）
+  history.replaceState(
+    null,
+    "",
+    window.location.pathname
+  );
+}
+
+
 const state = EditorState.create({
   doc: "",//loadFromLocal(),
   extensions: [
@@ -1178,6 +1218,7 @@ view.dispatch = tr => {
 
 await loadInitialDocument(view);
 startFullSync(view);
+applyTextFromURL(view);
 
 // ★ 追加：エクスポート用に保持
 window.editorView = view;
