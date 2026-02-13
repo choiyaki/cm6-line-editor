@@ -39,6 +39,70 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+import {
+  getAuth,
+  signInWithPopup,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signOut
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+const auth = getAuth();
+const provider = new GoogleAuthProvider();
+
+const loginBtn = document.getElementById("login-btn");
+const logoutBtn = document.getElementById("logout-btn");
+const menuUser = document.getElementById("menu-user");
+
+loginBtn.addEventListener("click", async () => {
+  await signInWithPopup(auth, provider);
+  menuPanel.hidden = true;
+});
+
+logoutBtn.addEventListener("click", async () => {
+  await signOut(auth);
+  menuPanel.hidden = true;
+});
+
+
+
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    loginBtn.classList.add("hidden");
+    logoutBtn.classList.remove("hidden");
+
+    menuUser.textContent = user.displayName ?? "Anonymous";
+    menuUser.classList.remove("hidden");
+
+  } else {
+    loginBtn.classList.remove("hidden");
+    logoutBtn.classList.add("hidden");
+
+    menuUser.classList.add("hidden");
+    menuUser.textContent = "";
+  }
+});
+
+const menuBtn = document.getElementById("menu-btn");
+const menuPanel = document.getElementById("menu-panel");
+
+menuBtn.addEventListener("click", () => {
+  menuPanel.hidden = !menuPanel.hidden;
+});
+
+// 外側クリックで閉じる（かなり大事）
+document.addEventListener("click", (e) => {
+  if (
+    !menuPanel.contains(e.target) &&
+    e.target !== menuBtn
+  ) {
+    menuPanel.hidden = true;
+  }
+});
+
+
+
+
 function isBlockSeparatorLine(text) {
   if (!text) return true;              // 完全空行
   if (text.trim() === "") return true; // 空白だけの行
@@ -1025,6 +1089,13 @@ let saveTimer = null;         // debounce用
 
 
 function scheduleSave(state) {
+  // ★ ログインしていなければ保存しない
+  if (!auth.currentUser) return;
+  if (!docRef) return;
+
+  // ★ IME中は保存しない（保険）
+  if (isComposing) return;
+
   if (saveTimer) clearTimeout(saveTimer);
 
   saveTimer = setTimeout(() => {
@@ -1032,7 +1103,7 @@ function scheduleSave(state) {
       docRef,
       {
         text: state.doc.toString(),
-        updatedAt: Date.now()
+        updatedAt: serverTimestamp()
       },
       { merge: true }
     );
@@ -1269,7 +1340,6 @@ const state = EditorState.create({
 		listToggleExtension(),
     history(),
     indentOnInput(),
-		//autosaveExtension,
 		fixEmptyLineBackspace,
 		listEnterKeymap,
 		hangingIndentPlugin,

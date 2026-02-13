@@ -284,11 +284,52 @@ body.header-hidden #app-main {
   background-color: rgba(100, 150, 255, 0.12);
 }
 
+#menu-panel {
+  position: absolute;
+  top: 40px;
+  left: 8px;
+
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 6px;
+  min-width: 180px;
+
+  box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+  z-index: 2000;
+}
+
+#menu-panel button {
+  width: 100%;
+  padding: 8px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+#menu-panel button:hover {
+  background: #f0f4ff;
+}
+
+.menu-user {
+  padding: 6px 8px;
+  font-size: 13px;
+  color: #555;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 4px;
+}
+
+.hidden {
+  display: none;
+}
+
   </style>
 </head>
 <body>
 	<header id="app-header">
-	  <button class="header-btn left">☰</button>
+	  <button id="menu-btn" class="header-btn left">☰</button>
 	
 	  <input
 	    type="text"
@@ -297,6 +338,12 @@ body.header-hidden #app-main {
 	  />
 	
 	  <button class="header-btn right">📤</button>
+		<div id="menu-panel" hidden>
+	    <div id="menu-user" class="menu-user hidden"></div>
+	    <button id="login-btn">Login with Google</button>
+	    <button id="logout-btn" class="hidden">Logout</button>
+	  </div>
+
 	</header>
 
   <main id="app-main">
