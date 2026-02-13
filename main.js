@@ -75,20 +75,26 @@ logoutBtn.addEventListener("click", async () => {
 
 
 
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
   if (user) {
     loginBtn.classList.add("hidden");
     logoutBtn.classList.remove("hidden");
-
     menuUser.textContent = user.displayName ?? "Anonymous";
     menuUser.classList.remove("hidden");
+
+    // ★ ここが重要
+    docRef = getUserDocRef(user.uid);
+
+    await loadInitialDocument(view);
+    startFullSync(view);
 
   } else {
     loginBtn.classList.remove("hidden");
     logoutBtn.classList.add("hidden");
-
     menuUser.classList.add("hidden");
     menuUser.textContent = "";
+
+    docRef = null;
   }
 });
 
@@ -119,7 +125,11 @@ function isBlockSeparatorLine(text) {
   return false;
 }
 
-const docRef = doc(db, "documents", "main");
+let docRef = null;
+
+function getUserDocRef(uid) {
+  return doc(db, "users", uid, "documents", "main");
+}
 
 async function loadInitialDocument(view) {
   const snap = await getDoc(docRef);
@@ -1377,8 +1387,6 @@ view.dispatch = tr => {
 };
 
 
-await loadInitialDocument(view);
-startFullSync(view);
 applyTextFromURL(view);
 
 // ★ 追加：エクスポート用に保持
