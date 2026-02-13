@@ -37,6 +37,13 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+function isBlockSeparatorLine(text) {
+  if (!text) return true;              // 完全空行
+  if (text.trim() === "") return true; // 空白だけの行
+  if (/^#+\s/.test(text)) return true; // 見出し行（#）
+  return false;
+}
+
 const docRef = doc(db, "documents", "main");
 
 async function loadInitialDocument(view) {
@@ -376,11 +383,16 @@ function isBlockStartSafe(state, lineDesc) {
 
   const line = state.doc.lineAt(lineDesc.from);
 
-  if (line.text.length === 0) return false;
+  // ★ 自身が境界行ならブロック開始ではない
+  if (isBlockSeparatorLine(line.text)) return false;
+
+  // 先頭行は常にブロック開始
   if (line.number === 1) return true;
 
   const prev = state.doc.line(line.number - 1);
-  return prev.text.length === 0;
+
+  // ★ 直前が境界行ならブロック開始
+  return isBlockSeparatorLine(prev.text);
 }
 
 class BlockHeadButtonMarker extends GutterMarker {
@@ -442,7 +454,7 @@ function getBlockText(state, startLineNumber) {
     const text = line.text;
 
     // 完全な空行でブロック終了
-    if (text.trim() === "") break;
+    if (isBlockSeparatorLine(text)) break;
 
     // 次のブロック開始で止めたいなら
     if (
@@ -520,7 +532,7 @@ const blockBodyDecoration = ViewPlugin.fromClass(
             let n = line.number;
             while (n <= state.doc.lines) {
               const l = state.doc.line(n);
-              if (n !== line.number && l.text.length === 0) break;
+              if (n !== line.number && isBlockSeparatorLine(l.text)) break;
 
               decos.push(
                 Decoration.line({
@@ -1037,7 +1049,6 @@ const imeWatcher = EditorView.domEventHandlers({
     scheduleSave(view.state);
   }
 });
-
 
 
 
