@@ -28,7 +28,9 @@ import {
 } from "https://esm.sh/@codemirror/language";
 
 import {
-  db
+  db,
+	auth,
+  provider
 } from "./firebase.js";
 
 import {
@@ -40,9 +42,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 import {
-  getAuth,
   signInWithPopup,
-  GoogleAuthProvider,
   onAuthStateChanged,
   signOut,
   signInWithRedirect,
@@ -51,11 +51,10 @@ import {
   browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-const auth = getAuth();
 await setPersistence(auth, browserLocalPersistence);
 
-const provider = new GoogleAuthProvider();
 
+/*
 getRedirectResult(auth)
   .then((result) => {
     if (result?.user) {
@@ -63,7 +62,7 @@ getRedirectResult(auth)
     }
   })
   .catch(console.error);
-
+*/
 const loginBtn = document.getElementById("login-btn");
 const logoutBtn = document.getElementById("logout-btn");
 const menuUser = document.getElementById("menu-user");
@@ -98,7 +97,7 @@ onAuthStateChanged(auth, async user => {
 
     startFirestoreSync(view, docRef);
   } else {
-		alert("null");
+		alert(user);
     stopFirestoreSync();
     docRef = null;
   }

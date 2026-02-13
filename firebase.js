@@ -8,6 +8,12 @@ import {
   updateDoc
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
+import {
+  getAuth,
+  GoogleAuthProvider
+} from
+  "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
 
 const firebaseConfig = {
   apiKey: "AIzaSyCOX6A5veapHTN_7ma8qgP7-kstDIIV-y8",
@@ -22,6 +28,9 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+
+export const auth = getAuth(app);
+export const provider = new GoogleAuthProvider();
 
 export {
   db,
