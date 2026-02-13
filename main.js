@@ -45,11 +45,15 @@ import {
   GoogleAuthProvider,
   onAuthStateChanged,
   signOut,
-	signInWithRedirect,
-  getRedirectResult
+  signInWithRedirect,
+  getRedirectResult,
+  setPersistence,
+  browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 const auth = getAuth();
+await setPersistence(auth, browserLocalPersistence);
+
 const provider = new GoogleAuthProvider();
 
 getRedirectResult(auth)
