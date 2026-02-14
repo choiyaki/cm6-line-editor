@@ -51,12 +51,7 @@ import {
   browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-try {
-  await setPersistence(auth, browserLocalPersistence);
-  console.log("Auth persistence set");
-} catch (e) {
-  console.warn("setPersistence failed, fallback to default", e);
-}
+await setPersistence(auth, browserLocalPersistence);
 
 
 let isInitializing = true; // ★ 追加
