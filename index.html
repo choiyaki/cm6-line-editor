@@ -353,14 +353,5 @@ body.header-hidden #app-main {
   </main>
 
   <script type="module" src="./main.js"></script>
-	<script>
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.getRegistrations().then(regs => {
-    for (const reg of regs) {
-      reg.unregister();
-    }
-  });
-}
-</script>
 </body>
 </html>

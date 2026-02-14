@@ -57,9 +57,49 @@ try {
   console.warn("setPersistence failed", e);
 }
 
+function consumeAppendTextFromURL() {
+  const params = new URLSearchParams(location.search);
+  const text = params.get("append");
+  if (!text) return null;
+
+  // URL を即消す（超重要）
+  history.replaceState(null, "", location.pathname);
+
+  return text;
+}
+
+let pendingAppendText = consumeAppendTextFromURL();
+let appendApplied = false;
+
 let isInitializing = true; // ★ 追加
 
+function onInitialFirestoreLoaded(editor) {
+  if (!pendingAppendText || appendApplied) return;
 
+  applyAppend(editor, pendingAppendText);
+
+  appendApplied = true;
+  pendingAppendText = null;
+}
+
+function applyAppend(editor, text) {
+  const doc = editor.state.doc;
+  const content = doc.toString();
+
+  let insertText = text;
+
+  // 末尾が空行でなければ、必ず空行を1行あける
+  if (!content.endsWith("\n\n")) {
+    insertText = "\n\n" + text;
+  }
+
+  editor.dispatch({
+    changes: {
+      from: doc.length,
+      insert: insertText
+    }
+  });
+}
 
 const loginBtn = document.getElementById("login-btn");
 const logoutBtn = document.getElementById("logout-btn");
@@ -144,6 +184,7 @@ async function startFirestoreSync(view, ref) {
   isInitializing = false; // ★ Firestore同期完了
 
     // ★ ここで URL テキストを適用（必ず空行1行）
+	onInitialFirestoreLoaded(view);
 
   // --- リアルタイム同期 ---
   unsubscribe = onSnapshot(ref, snap => {
@@ -1451,9 +1492,6 @@ view.dispatch = tr => {
   originalDispatch(tr);
   isLocalEditing = false;
 };
-
-
-//applyTextFromURL(view);
 
 // ★ 追加：エクスポート用に保持
 window.editorView = view;
