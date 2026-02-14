@@ -690,7 +690,7 @@ function getCurrentTitle() {
   }
 
   // フォールバック（未保存・空のとき）
-  return "無題";
+  return (saved && saved.trim() !== "") ? saved.trim() : "無題";
 }
 
 function blockUrlBuilders(blockLines,action) {
@@ -1299,7 +1299,7 @@ const TITLE_KEY = "cm6-title";
 /* ===== load ===== */
 const savedTitle = localStorage.getItem(TITLE_KEY);
 if (savedTitle !== null) {
-  titleInput.value = savedTitle;
+  titleInput.value = savedTitle ?? "";
 }
 
 /* ===== save ===== 
