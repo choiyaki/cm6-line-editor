@@ -51,35 +51,14 @@ import {
   browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-await setPersistence(auth, browserLocalPersistence);
-
+try {
+  await setPersistence(auth, browserLocalPersistence);
+} catch (e) {
+  console.warn("setPersistence failed", e);
+}
 
 let isInitializing = true; // ★ 追加
 
-let pendingURLText = null;
-
-function extractTextFromURL() {
-  const params = new URLSearchParams(window.location.search);
-  const raw = params.get("text");
-  if (!raw) return null;
-
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
-}
-
-pendingURLText = extractTextFromURL();
-
-if (pendingURLText) {
-  // ★ ここで即URLを消す（最重要）
-  history.replaceState(
-    null,
-    "",
-    window.location.pathname
-  );
-}
 
 
 const loginBtn = document.getElementById("login-btn");
@@ -165,34 +144,6 @@ async function startFirestoreSync(view, ref) {
   isInitializing = false; // ★ Firestore同期完了
 
     // ★ ここで URL テキストを適用（必ず空行1行）
-  if (pendingURLText) {
-    const current = view.state.doc.toString();
-    const insertText = buildInsertText(current, pendingURLText);
-
-    isApplyingRemote = true;
-
-    view.dispatch({
-      changes: {
-        from: 0,
-        to: view.state.doc.length,
-        insert: insertText
-      }
-    });
-
-    isApplyingRemote = false;
-
-    pendingURLText = null;
-
-    // URL を消す（再適用防止）
-    history.replaceState(
-      null,
-      "",
-      window.location.pathname
-    );
-
-    // ★ URL由来の変更は即保存
-    scheduleSave(view.state);
-  }
 
   // --- リアルタイム同期 ---
   unsubscribe = onSnapshot(ref, snap => {
