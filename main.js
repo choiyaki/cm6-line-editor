@@ -146,16 +146,18 @@ async function startFirestoreSync(view, ref) {
 
   isInitializing = false; // ★ Firestore同期完了
 
-  // ★ ここで URL テキストを適用
+    // ★ ここで URL テキストを適用（必ず空行1行）
   if (pendingURLText) {
+    const current = view.state.doc.toString();
+    const insertText = buildInsertText(current, pendingURLText);
+
     isApplyingRemote = true;
 
     view.dispatch({
       changes: {
-        from: view.state.doc.length,
-        insert:
-          (view.state.doc.length > 0 ? "\n" : "") +
-          pendingURLText
+        from: 0,
+        to: view.state.doc.length,
+        insert: insertText
       }
     });
 
@@ -1346,6 +1348,17 @@ function applyTextFromURL(view) {
     "",
     window.location.pathname
   );
+}
+
+function buildInsertText(docText, insertText) {
+  if (!docText || docText.length === 0) {
+    return insertText;
+  }
+
+  // 末尾の改行を整理（0 or 1個に）
+  const trimmed = docText.replace(/\n+$/, "");
+
+  return trimmed + "\n\n" + insertText;
 }
 
 
