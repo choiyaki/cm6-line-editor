@@ -72,6 +72,15 @@ function extractTextFromURL() {
 
 pendingURLText = extractTextFromURL();
 
+if (pendingURLText) {
+  // ★ ここで即URLを消す（最重要）
+  history.replaceState(
+    null,
+    "",
+    window.location.pathname
+  );
+}
+
 
 const loginBtn = document.getElementById("login-btn");
 const logoutBtn = document.getElementById("logout-btn");
@@ -1311,6 +1320,7 @@ const focusedActiveLine = ViewPlugin.fromClass(
   }
 );
 
+/*
 function getTextFromURL() {
   const params = new URLSearchParams(window.location.search);
   const raw = params.get("text");
@@ -1349,6 +1359,7 @@ function applyTextFromURL(view) {
     window.location.pathname
   );
 }
+*/
 
 function buildInsertText(docText, insertText) {
   if (!docText || docText.length === 0) {
