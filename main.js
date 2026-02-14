@@ -117,8 +117,9 @@ onAuthStateChanged(auth, async user => {
     const snap = await getDoc(docRef);
 		if (!snap.exists()) {
 		  await setDoc(docRef, {
-		    text: "",
-		    createdAt: serverTimestamp()
+		    title: "無題",
+			  text: "",
+  			createdAt: serverTimestamp()
 		  });
 		}
 
@@ -141,16 +142,24 @@ async function startFirestoreSync(view, ref) {
   // --- 初回ロード ---
   const snap = await getDoc(ref);
   if (snap.exists()) {
-    const text = snap.data().text ?? "";
-    isApplyingRemote = true;
-    view.dispatch({
-      changes: {
-        from: 0,
-        to: view.state.doc.length,
-        insert: text
-      }
-    });
-    isApplyingRemote = false;
+    const data = snap.data();
+
+		const text = data.text ?? "";
+		const title = data.title ?? "無題";
+		
+		/* --- text --- */
+		isApplyingRemote = true;
+		view.dispatch({
+		  changes: {
+		    from: 0,
+		    to: view.state.doc.length,
+		    insert: text
+		  }
+		});
+		isApplyingRemote = false;
+		
+		/* --- title --- */
+		applyTitleFromRemote(title);
   }
 
   isInitializing = false; // ★ Firestore同期完了
@@ -191,20 +200,40 @@ async function startFirestoreSync(view, ref) {
     if (isApplyingRemote) return;
     if (view.hasFocus || isComposing || isLocalEditing) return;
 
-    const remoteText = snap.data().text ?? "";
-    const current = view.state.doc.toString();
-    if (remoteText === current) return;
+    const data = snap.data();
 
-    isApplyingRemote = true;
-    view.dispatch({
-      changes: {
-        from: 0,
-        to: view.state.doc.length,
-        insert: remoteText
-      }
-    });
-    isApplyingRemote = false;
+		const remoteText = data.text ?? "";
+		const remoteTitle = data.title ?? "無題";
+		
+		/* --- text 同期（今まで通り） --- */
+		const current = view.state.doc.toString();
+		if (remoteText !== current) {
+		  isApplyingRemote = true;
+		  view.dispatch({
+		    changes: {
+		      from: 0,
+		      to: view.state.doc.length,
+		      insert: remoteText
+		    }
+		  });
+		  isApplyingRemote = false;
+		}
+		
+		/* --- title 同期 --- */
+		if (titleInput.value !== remoteTitle) {
+		  applyTitleFromRemote(remoteTitle);
+		}
   });
+}
+
+function applyTitleFromRemote(title) {
+  const normalized = title?.trim() || "無題";
+
+  // input に反映
+  titleInput.value = normalized;
+
+  // localStorage にも同期
+  localStorage.setItem(TITLE_KEY, normalized);
 }
 
 function stopFirestoreSync() {
@@ -1215,14 +1244,32 @@ function scheduleSave(state) {
     setDoc(
 		  docRef,
 		  {
-		    text: state.doc.toString(),
-		    updatedAt: serverTimestamp()
+		    title: getCurrentTitle(),
+    		text: state.doc.toString(),
+    		updatedAt: serverTimestamp()
 		  },
 		  { merge: true }
 		)
 		.then(() => console.log("🔥 saved"))
 		.catch(e => console.error("❌ save failed", e));
   }, 500);
+}
+
+function saveTitle() {
+  const value = titleInput.value.trim() || "無題";
+
+  localStorage.setItem(TITLE_KEY, value);
+
+  if (!docRef || isInitializing) return;
+
+  setDoc(
+    docRef,
+    {
+      title: value,
+      updatedAt: serverTimestamp()
+    },
+    { merge: true }
+  );
 }
 
 const imeWatcher = EditorView.domEventHandlers({
@@ -1255,7 +1302,7 @@ if (savedTitle !== null) {
   titleInput.value = savedTitle;
 }
 
-/* ===== save ===== */
+/* ===== save ===== 
 function saveTitle() {
   const value = titleInput.value.trim();
   if (value === "") {
@@ -1263,7 +1310,7 @@ function saveTitle() {
   } else {
     localStorage.setItem(TITLE_KEY, value);
   }
-}
+}*/
 
 titleInput.addEventListener("input", saveTitle);
 titleInput.addEventListener("blur", saveTitle);
@@ -1319,47 +1366,6 @@ const focusedActiveLine = ViewPlugin.fromClass(
     decorations: v => v.decorations
   }
 );
-
-/*
-function getTextFromURL() {
-  const params = new URLSearchParams(window.location.search);
-  const raw = params.get("text");
-  if (!raw) return null;
-
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
-  }
-}
-
-function applyTextFromURL(view) {
-  const text = getTextFromURL();
-  if (!text) return;
-
-  isApplyingRemote = true;
-
-  view.dispatch({
-    changes: {
-      from: view.state.doc.length,
-      insert:
-        (view.state.doc.length > 0 ? "\n" : "") + text
-    },
-    selection: {
-      anchor: view.state.doc.length + text.length + 1
-    }
-  });
-
-  isApplyingRemote = false;
-
-  // ★ URL は一度使ったら消す（超重要）
-  history.replaceState(
-    null,
-    "",
-    window.location.pathname
-  );
-}
-*/
 
 function buildInsertText(docText, insertText) {
   if (!docText || docText.length === 0) {
