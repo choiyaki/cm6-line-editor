@@ -9,10 +9,13 @@
     rel="stylesheet"
     href="https://esm.sh/@codemirror/view/dist/style.css"
   />
-	<link rel="manifest" href="./manifest.json">
-<meta name="theme-color" content="#ffffff">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP&display=swap" rel="stylesheet">
+			<link rel="manifest" href="./manifest.json">
+		<meta name="theme-color" content="#ffffff">
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="apple-mobile-web-app-status-bar-style" content="default">
   <style>
 		
 		.cm-content {
@@ -59,7 +62,7 @@
 		}
 		
 		body {
-		  font-family: system-ui, -apple-system, sans-serif;
+			font-family: "IBM Plex Sans JP", sans-serif;
 		  overflow-y: auto;
 		  -webkit-overflow-scrolling: touch;
 		}
@@ -323,6 +326,35 @@ body.header-hidden #app-main {
 
 .hidden {
   display: none;
+}
+
+/* ===== Markdown look ===== */
+
+/* 見出し */
+.cm-line.cm-md-heading {
+  font-weight: 700;
+	color: #2563eb;
+}
+
+/* レベル別（任意） 
+.cm-line.cm-md-h1 { font-size: 1.25em; }
+.cm-line.cm-md-h2 { font-size: 1.15em; }
+.cm-line.cm-md-h3 { font-size: 1.08em; }*/
+
+/* リスト */
+.cm-line.cm-md-list {
+  color: #2563eb;
+}
+
+/* チェックボックス */
+.cm-line.cm-md-checkbox {
+  color: #2563eb; /* blue-600 */
+}
+
+/* 完了チェック */
+.cm-line.cm-md-checkbox-done {
+  color: #9ca3af;
+  text-decoration: line-through;
 }
 
   </style>

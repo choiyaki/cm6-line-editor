@@ -57,6 +57,44 @@ try {
   console.warn("setPersistence failed", e);
 }
 
+function buildExportText(state) {
+  const lines = state.doc.toString().split("\n");
+
+  const resultBlocks = [];
+  let currentBlock = [];
+
+  function flushBlock() {
+    if (currentBlock.length === 0) return;
+
+    const firstLine = currentBlock[0];
+
+    // ★ 除外条件（ブロック1行目）
+    if (
+      firstLine.startsWith("📝") ||
+      firstLine.startsWith("📓")
+    ) {
+      currentBlock = [];
+      return;
+    }
+
+    resultBlocks.push(currentBlock.join("\n"));
+    currentBlock = [];
+  }
+
+  for (const line of lines) {
+    if (isBlockSeparatorLine(line)) {
+      flushBlock();
+    } else {
+      currentBlock.push(line);
+    }
+  }
+
+  // 最後のブロック
+  flushBlock();
+
+  return resultBlocks.join("\n\n");
+}
+
 function consumeAppendTextFromURL() {
   const params = new URLSearchParams(location.search);
   const text = params.get("append");
@@ -125,26 +163,25 @@ logoutBtn.addEventListener("click", async () => {
 
 
 onAuthStateChanged(auth, async user => {
-  
-	if (user) {
-		
+  if (user) {
     loginBtn.classList.add("hidden");
     logoutBtn.classList.remove("hidden");
 
     docRef = getUserDocRef(user.uid);
 
     const snap = await getDoc(docRef);
-		if (!snap.exists()) {
-		  await setDoc(docRef, {
-		    title: "無題",
-			  text: "",
-  			createdAt: serverTimestamp()
-		  });
-		}
+
+    if (!snap.exists()) {
+      // ★ local の内容を引き継ぐ
+      await setDoc(docRef, {
+        title: loadTitleLocal(),
+        text: loadFromLocal(),
+        createdAt: serverTimestamp()
+      });
+    }
 
     startFirestoreSync(view, docRef);
   } else {
-		
     stopFirestoreSync();
     docRef = null;
   }
@@ -312,16 +349,84 @@ function startFullSync(view) {
 
 const syncExtension = EditorView.updateListener.of(update => {
   if (!update.docChanged) return;
-  if (!docRef) return;
-  if (isInitializing) return; // ★ 追加
+  if (isInitializing) return;
   if (isApplyingRemote) return;
   if (isComposing) return;
-
   scheduleSave(update.state);
 });
 
 
+const markdownLookPlugin = ViewPlugin.fromClass(
+  class {
+    constructor(view) {
+      this.decorations = this.build(view);
+    }
 
+    update(update) {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = this.build(update.view);
+      }
+    }
+
+    build(view) {
+      const decos = [];
+      const { state } = view;
+
+      for (const { from, to } of view.visibleRanges) {
+        let pos = from;
+
+        while (pos <= to) {
+          const line = state.doc.lineAt(pos);
+          const text = line.text;
+
+          /* --- 見出し --- */
+          if (/^#{1,6}\s+/.test(text)) {
+            const level = text.match(/^#+/)[0].length;
+            decos.push(
+              Decoration.line({
+                class:
+                  "cm-md-heading cm-md-h" + Math.min(level, 3)
+              }).range(line.from)
+            );
+          }
+
+          /* --- チェックボックス --- */
+          else if (/^\s*- \[x\]\s+/.test(text)) {
+            decos.push(
+              Decoration.line({
+                class: "cm-md-checkbox-done"
+              }).range(line.from)
+            );
+          }
+
+          else if (/^\s*- \[ \]\s+/.test(text)) {
+            decos.push(
+              Decoration.line({
+                class: "cm-md-checkbox"
+              }).range(line.from)
+            );
+          }
+
+          /* --- 通常リスト --- */
+          else if (/^\s*- /.test(text)) {
+            decos.push(
+              Decoration.line({
+                class: "cm-md-list"
+              }).range(line.from)
+            );
+          }
+
+          pos = line.to + 1;
+        }
+      }
+
+      return Decoration.set(decos);
+    }
+  },
+  {
+    decorations: v => v.decorations
+  }
+);
 
 
 
@@ -1162,26 +1267,25 @@ const headerFocusWatcher = EditorView.domEventHandlers({
 
 function exportDocument(view) {
   if (!view) return;
-  // --- タイトル ---
+
   const title =
     localStorage.getItem("cm6-title")?.trim() || "無題";
 
-  // --- 本文 ---
-  const bodyText = title + "\n" + view.state.doc
-    .toString()
+  // ★ ブロック除外済み本文
+  const filteredBody = buildExportText(view.state)
     .replace(/  /g, " ")
     .replace(/\- /g, " ");
 
-  if (!bodyText.trim()) {
+  const bodyText = title + "\n" + filteredBody;
+
+  if (!filteredBody.trim()) {
     alert("本文が空です");
     return;
   }
 
-  // --- URL生成（ここだけ用途に応じて変える） ---
   const url =
     `shortcuts://run-shortcut?name=Choiyakiをmd保存&input=${encodeURIComponent(bodyText)}`;
 
-  // --- 実行 ---
   window.location.href = url;
 }
 
@@ -1225,33 +1329,42 @@ let saveTimer = null;         // debounce用
 
 
 function scheduleSave(state) {
-  if (!docRef) return;
-  if (isInitializing) return; // ★ 追加
-  if (isApplyingRemote) return; // ★ 追加
+  if (isInitializing) return;
+  if (isApplyingRemote) return;
   if (isComposing) return;
-
+console.log("save")
   if (saveTimer) clearTimeout(saveTimer);
 
   saveTimer = setTimeout(() => {
+    // ★ ログインしていない → localStorage
+    if (!docRef) {
+      saveToLocal(state);
+      console.log("💾 saved to local");
+      return;
+    }
+
+    // ★ ログインしている → Firestore
     setDoc(
-		  docRef,
-		  {
-		    title: getCurrentTitle(),
-    		text: state.doc.toString(),
-    		updatedAt: serverTimestamp()
-		  },
-		  { merge: true }
-		)
-		.then(() => console.log("🔥 saved"))
-		.catch(e => console.error("❌ save failed", e));
+      docRef,
+      {
+        title: getCurrentTitle(),
+        text: state.doc.toString(),
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    )
+      .then(() => console.log("🔥 saved to firestore"))
+      .catch(e => console.error("❌ save failed", e));
   }, 500);
 }
 
 function saveTitle() {
   const value = titleInput.value.trim() || "無題";
 
-  localStorage.setItem(TITLE_KEY, value);
+  // ★ 常に local に保存（ログアウト対策）
+  saveTitleLocal(value);
 
+  // ★ ログイン中のみ Firestore
   if (!docRef || isInitializing) return;
 
   setDoc(
@@ -1450,8 +1563,32 @@ const moveLineKeymap = keymap.of([
   }
 ]);
 
+const LOCAL_TEXT_KEY = "cm6-doc-text";
+const LOCAL_TITLE_KEY = "cm6-doc-title";
+
+function saveToLocal(state) {
+  localStorage.setItem(
+    LOCAL_TEXT_KEY,
+    state.doc.toString()
+  );
+}
+
+function loadFromLocal() {
+  return localStorage.getItem(LOCAL_TEXT_KEY) ?? "";
+}
+
+function saveTitleLocal(value) {
+  localStorage.setItem(LOCAL_TITLE_KEY, value);
+}
+
+function loadTitleLocal() {
+  return localStorage.getItem(LOCAL_TITLE_KEY) ?? "無題";
+}
+
+titleInput.value = loadTitleLocal();
+
 const state = EditorState.create({
-  doc: "",//loadFromLocal(),
+  doc: loadFromLocal(),
   extensions: [
 		EditorView.lineWrapping,
 		headerFocusWatcher,
@@ -1470,6 +1607,7 @@ const state = EditorState.create({
 		listEnterKeymap,
 		hangingIndentPlugin,
 		nonEmptyLineDecoration,
+		markdownLookPlugin,
     keymap.of([
       ...defaultKeymap,
       ...historyKeymap
@@ -1484,6 +1622,8 @@ const view = new EditorView({
   state,
   parent: document.getElementById("editor")
 });
+
+isInitializing = false;
 
 const originalDispatch = view.dispatch.bind(view);
 
