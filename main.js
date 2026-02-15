@@ -374,96 +374,122 @@ const markdownLookPlugin = ViewPlugin.fromClass(
     }
 
     build(view) {
-		  const decos = [];
-		  const doneChildLines = new Set();
-		  const { state } = view;
-		
-		  // ★ viewport が取れない場合は全文を対象にする
-		  const ranges =
-		    view.visibleRanges.length > 0
-		      ? view.visibleRanges
-		      : [{ from: 0, to: state.doc.length }];
-		
-		  for (const { from, to } of ranges) {
-		    let pos = from;
-		
-		    while (pos <= to) {
-		      const line = state.doc.lineAt(pos);
-		      const text = line.text;
-		
-		      /* --- 見出し --- */
-		      if (/^#{1,6}\s+/.test(text)) {
-		        const level = text.match(/^#+/)[0].length;
-		        decos.push(
-		          Decoration.line({
-		            class: "cm-md-heading cm-md-h" + Math.min(level, 3)
-		          }).range(line.from)
-		        );
-		      }
-		
-		      /* --- 完了チェック --- */
-		      else if (/^\s*- \[x\]\s+/.test(text)) {
-		        const baseIndent = getIndentLevel(text);
-		
-		        decos.push(
-		          Decoration.line({
-		            class: "cm-md-checkbox-done"
-		          }).range(line.from)
-		        );
-		
-		        let n = line.number + 1;
-		        while (n <= state.doc.lines) {
-		          const next = state.doc.line(n);
-		          const nextText = next.text;
-		
-		          if (nextText.trim() === "") {
-		            n++;
-		            continue;
-		          }
-		
-		          const nextIndent = getIndentLevel(nextText);
-		          if (nextIndent <= baseIndent) break;
-		
-		          doneChildLines.add(next.from);
-		          n++;
-		        }
-		      }
-		
-		      /* --- 未完了チェック --- */
-		      else if (/^\s*- \[ \]\s+/.test(text)) {
-		        decos.push(
-		          Decoration.line({
-		            class: "cm-md-checkbox"
-		          }).range(line.from)
-		        );
-		      }
-		
-		      /* --- 通常リスト --- */
-		      else if (/^\s*- /.test(text)) {
-		        decos.push(
-		          Decoration.line({
-		            class: "cm-md-list"
-		          }).range(line.from)
-		        );
-		      }
-		
-		      pos = line.to + 1;
-		    }
-		  }
-		
-		  // ★ 下位行まとめて適用
-		  [...doneChildLines]
-		    .sort((a, b) => a - b)
-		    .forEach(from => {
-		      decos.push(
-		        Decoration.line({
-		          class: "cm-md-done-child"
-		        }).range(from)
-		      );
-		    });
-		
-		  return Decoration.set(decos);
-		}
+      const decos = [];
+      const doneChildLines = new Set();
+      const { state } = view;
+
+      const ranges =
+        view.visibleRanges.length > 0
+          ? view.visibleRanges
+          : [{ from: 0, to: state.doc.length }];
+
+      for (const { from, to } of ranges) {
+        let pos = from;
+
+        while (pos <= to) {
+          const line = state.doc.lineAt(pos);
+          const text = line.text;
+
+          /* --- 見出し --- */
+          if (/^#{1,6}\s+/.test(text)) {
+            const level = text.match(/^#+/)[0].length;
+            decos.push(
+              Decoration.line({
+                class: "cm-md-heading cm-md-h" + Math.min(level, 3)
+              }).range(line.from)
+            );
+          }
+
+          /* --- 完了チェック --- */
+          else if (/^\s*- \[x\]\s+/.test(text)) {
+            const baseIndent = getIndentLevel(text);
+
+            decos.push(
+              Decoration.line({
+                class: "cm-md-checkbox-done"
+              }).range(line.from)
+            );
+
+            let n = line.number + 1;
+            while (n <= state.doc.lines) {
+              const next = state.doc.line(n);
+              const nextText = next.text;
+
+              if (nextText.trim() === "") {
+                n++;
+                continue;
+              }
+
+              const nextIndent = getIndentLevel(nextText);
+              if (nextIndent <= baseIndent) break;
+
+              doneChildLines.add(next.from);
+              n++;
+            }
+          }
+
+          /* --- 未完了チェック --- */
+          else if (/^\s*- \[ \]\s+/.test(text)) {
+            decos.push(
+              Decoration.line({
+                class: "cm-md-checkbox"
+              }).range(line.from)
+            );
+          }
+
+          /* --- 通常リスト --- */
+          else if (/^\s*- /.test(text)) {
+            decos.push(
+              Decoration.line({
+                class: "cm-md-list"
+              }).range(line.from)
+            );
+          }
+
+          /* --- Markdownリンク --- */
+          let lm;
+          while ((lm = linkRE.exec(text))) {
+            const start = line.from + lm.index + 1;
+            const end = start + lm[1].length;
+
+            decos.push(
+              Decoration.mark({
+                class: "cm-md-link",
+                attributes: {
+                  "data-url": lm[2]
+                }
+              }).range(start, end)
+            );
+          }
+
+          /* --- 画像プレビュー --- */
+          const im = text.match(imageRE);
+          if (im) {
+            decos.push(
+              Decoration.widget({
+                widget: new ImageWidget(im[2], im[1]),
+                side: 1
+              }).range(line.to)
+            );
+          }
+
+          pos = line.to + 1;
+        }
+      }
+
+      /* --- 完了チェックの下位行をまとめて装飾 --- */
+      [...doneChildLines]
+        .sort((a, b) => a - b)
+        .forEach(from => {
+          decos.push(
+            Decoration.line({
+              class: "cm-md-done-child"
+            }).range(from)
+          );
+        });
+
+      return Decoration.set(decos);
+    }
   },
   {
     decorations: v => v.decorations
@@ -474,6 +500,49 @@ function getIndentLevel(text) {
   const m = text.match(/^(\s*)/);
   return m ? Math.floor(m[1].length / 2) : 0;
 }
+
+/* --- 正規表現 --- */
+const linkRE = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+const imageRE = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/;
+
+/* --- 画像ウィジェット --- */
+class ImageWidget extends WidgetType {
+  constructor(src, alt) {
+    super();
+    this.src = src;
+    this.alt = alt;
+  }
+
+  toDOM() {
+    const img = document.createElement("img");
+    img.src = this.src;
+    img.alt = this.alt;
+    img.loading = "lazy";
+    img.style.maxWidth = "100%";
+    img.style.display = "block";
+    img.style.margin = "6px 0";
+    return img;
+  }
+
+  ignoreEvent() {
+    return true;
+  }
+}
+
+const markdownLinkHandler = EditorView.domEventHandlers({
+  click(event) {
+    const el = event.target.closest(".cm-md-link");
+    if (!el) return false;
+
+    const url = el.getAttribute("data-url");
+    if (url) {
+      window.open(url, "_blank");
+      return true;
+    }
+  }
+});
+
+
 
 
 const fixEmptyLineBackspace = keymap.of([
@@ -1653,6 +1722,7 @@ const state = EditorState.create({
 		hangingIndentPlugin,
 		nonEmptyLineDecoration,
 		markdownLookPlugin,
+		markdownLinkHandler,
     keymap.of([
       ...defaultKeymap,
       ...historyKeymap
