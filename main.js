@@ -118,16 +118,16 @@ let isInitializing = true; // ★ 追加
 
 function onInitialFirestoreLoaded(editor) {
   if (!pendingAppendText || appendApplied) return;
-
+alert("ok")
   applyAppend(editor, pendingAppendText);
 
   appendApplied = true;
   pendingAppendText = null;
 
   // ★ search を含めず、完全に消す
-  const cleanURL = location.origin + location.pathname;
-	alert(cleanURL)
-  history.replaceState(null, "", cleanURL);
+  //const cleanURL = location.origin + location.pathname;
+alert("clean")
+  history.replaceState(null, "", "https://choiyaki.github.io/cm6-line-editor/");
 }
 
 function applyAppend(editor, text) {
