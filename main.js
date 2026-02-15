@@ -370,6 +370,7 @@ const markdownLookPlugin = ViewPlugin.fromClass(
 
     build(view) {
       const decos = [];
+      const doneChildLines = new Set(); // ★ 下位行を一時的に集める
       const { state } = view;
 
       for (const { from, to } of view.visibleRanges) {
@@ -384,15 +385,13 @@ const markdownLookPlugin = ViewPlugin.fromClass(
             const level = text.match(/^#+/)[0].length;
             decos.push(
               Decoration.line({
-                class:
-                  "cm-md-heading cm-md-h" + Math.min(level, 3)
+                class: "cm-md-heading cm-md-h" + Math.min(level, 3)
               }).range(line.from)
             );
           }
 
-          /* --- チェックボックス --- */
-          else /* === 完了チェックボックス === */
-          if (/^\s*- \[x\]\s+/.test(text)) {
+          /* --- 完了チェックボックス --- */
+          else if (/^\s*- \[x\]\s+/.test(text)) {
             const baseIndent = getIndentLevel(text);
 
             // 自身
@@ -402,11 +401,14 @@ const markdownLookPlugin = ViewPlugin.fromClass(
               }).range(line.from)
             );
 
-            // 下位を走査
+            // 下位行を「記録だけ」する
             let n = line.number + 1;
             while (n <= state.doc.lines) {
               const next = state.doc.line(n);
-							if (next.from > to) break;
+
+              // viewport 外なら打ち切り（重要）
+              if (next.from > to) break;
+
               const nextText = next.text;
 
               // 空行はスキップ
@@ -420,18 +422,12 @@ const markdownLookPlugin = ViewPlugin.fromClass(
               // 同階層 or 上位で終了
               if (nextIndent <= baseIndent) break;
 
-              decos.push(
-                Decoration.line({
-                  class: "cm-md-done-child"
-                }).range(next.from)
-              );
-
+              doneChildLines.add(next.from);
               n++;
             }
           }
 
-
-
+          /* --- 未完了チェックボックス --- */
           else if (/^\s*- \[ \]\s+/.test(text)) {
             decos.push(
               Decoration.line({
@@ -452,6 +448,17 @@ const markdownLookPlugin = ViewPlugin.fromClass(
           pos = line.to + 1;
         }
       }
+
+      /* --- ★ 下位行をまとめて追加（昇順保証） --- */
+      [...doneChildLines]
+        .sort((a, b) => a - b)
+        .forEach(from => {
+          decos.push(
+            Decoration.line({
+              class: "cm-md-done-child"
+            }).range(from)
+          );
+        });
 
       return Decoration.set(decos);
     }
