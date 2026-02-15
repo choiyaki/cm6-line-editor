@@ -369,99 +369,96 @@ const markdownLookPlugin = ViewPlugin.fromClass(
     }
 
     build(view) {
-      const decos = [];
-      const doneChildLines = new Set(); // ★ 下位行を一時的に集める
-      const { state } = view;
-
-      for (const { from, to } of view.visibleRanges) {
-        let pos = from;
-
-        while (pos <= to) {
-          const line = state.doc.lineAt(pos);
-          const text = line.text;
-
-          /* --- 見出し --- */
-          if (/^#{1,6}\s+/.test(text)) {
-            const level = text.match(/^#+/)[0].length;
-            decos.push(
-              Decoration.line({
-                class: "cm-md-heading cm-md-h" + Math.min(level, 3)
-              }).range(line.from)
-            );
-          }
-
-          /* --- 完了チェックボックス --- */
-          else if (/^\s*- \[x\]\s+/.test(text)) {
-            const baseIndent = getIndentLevel(text);
-
-            // 自身
-            decos.push(
-              Decoration.line({
-                class: "cm-md-checkbox-done"
-              }).range(line.from)
-            );
-
-            // 下位行を「記録だけ」する
-            let n = line.number + 1;
-            while (n <= state.doc.lines) {
-              const next = state.doc.line(n);
-
-              // viewport 外なら打ち切り（重要）
-              if (next.from > to) break;
-
-              const nextText = next.text;
-
-              // 空行はスキップ
-              if (nextText.trim() === "") {
-                n++;
-                continue;
-              }
-
-              const nextIndent = getIndentLevel(nextText);
-
-              // 同階層 or 上位で終了
-              if (nextIndent <= baseIndent) break;
-
-              doneChildLines.add(next.from);
-              n++;
-            }
-          }
-
-          /* --- 未完了チェックボックス --- */
-          else if (/^\s*- \[ \]\s+/.test(text)) {
-            decos.push(
-              Decoration.line({
-                class: "cm-md-checkbox"
-              }).range(line.from)
-            );
-          }
-
-          /* --- 通常リスト --- */
-          else if (/^\s*- /.test(text)) {
-            decos.push(
-              Decoration.line({
-                class: "cm-md-list"
-              }).range(line.from)
-            );
-          }
-
-          pos = line.to + 1;
-        }
-      }
-
-      /* --- ★ 下位行をまとめて追加（昇順保証） --- */
-      [...doneChildLines]
-        .sort((a, b) => a - b)
-        .forEach(from => {
-          decos.push(
-            Decoration.line({
-              class: "cm-md-done-child"
-            }).range(from)
-          );
-        });
-
-      return Decoration.set(decos);
-    }
+		  const decos = [];
+		  const doneChildLines = new Set();
+		  const { state } = view;
+		
+		  // ★ viewport が取れない場合は全文を対象にする
+		  const ranges =
+		    view.visibleRanges.length > 0
+		      ? view.visibleRanges
+		      : [{ from: 0, to: state.doc.length }];
+		
+		  for (const { from, to } of ranges) {
+		    let pos = from;
+		
+		    while (pos <= to) {
+		      const line = state.doc.lineAt(pos);
+		      const text = line.text;
+		
+		      /* --- 見出し --- */
+		      if (/^#{1,6}\s+/.test(text)) {
+		        const level = text.match(/^#+/)[0].length;
+		        decos.push(
+		          Decoration.line({
+		            class: "cm-md-heading cm-md-h" + Math.min(level, 3)
+		          }).range(line.from)
+		        );
+		      }
+		
+		      /* --- 完了チェック --- */
+		      else if (/^\s*- \[x\]\s+/.test(text)) {
+		        const baseIndent = getIndentLevel(text);
+		
+		        decos.push(
+		          Decoration.line({
+		            class: "cm-md-checkbox-done"
+		          }).range(line.from)
+		        );
+		
+		        let n = line.number + 1;
+		        while (n <= state.doc.lines) {
+		          const next = state.doc.line(n);
+		          const nextText = next.text;
+		
+		          if (nextText.trim() === "") {
+		            n++;
+		            continue;
+		          }
+		
+		          const nextIndent = getIndentLevel(nextText);
+		          if (nextIndent <= baseIndent) break;
+		
+		          doneChildLines.add(next.from);
+		          n++;
+		        }
+		      }
+		
+		      /* --- 未完了チェック --- */
+		      else if (/^\s*- \[ \]\s+/.test(text)) {
+		        decos.push(
+		          Decoration.line({
+		            class: "cm-md-checkbox"
+		          }).range(line.from)
+		        );
+		      }
+		
+		      /* --- 通常リスト --- */
+		      else if (/^\s*- /.test(text)) {
+		        decos.push(
+		          Decoration.line({
+		            class: "cm-md-list"
+		          }).range(line.from)
+		        );
+		      }
+		
+		      pos = line.to + 1;
+		    }
+		  }
+		
+		  // ★ 下位行まとめて適用
+		  [...doneChildLines]
+		    .sort((a, b) => a - b)
+		    .forEach(from => {
+		      decos.push(
+		        Decoration.line({
+		          class: "cm-md-done-child"
+		        }).range(from)
+		      );
+		    });
+		
+		  return Decoration.set(decos);
+		}
   },
   {
     decorations: v => v.decorations
