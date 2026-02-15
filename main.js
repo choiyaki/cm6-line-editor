@@ -448,7 +448,7 @@ const markdownLookPlugin = ViewPlugin.fromClass(
 
           /* --- Markdownリンク --- */
           let lm;
-          while ((lm = linkRE.exec(text))) {
+					while ((lm = localLinkRE.exec(text))) {
             const start = line.from + lm.index + 1;
             const end = start + lm[1].length;
 
@@ -502,7 +502,7 @@ function getIndentLevel(text) {
 }
 
 /* --- 正規表現 --- */
-const linkRE = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+const localLinkRE = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
 const imageRE = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/;
 
 /* --- 画像ウィジェット --- */
