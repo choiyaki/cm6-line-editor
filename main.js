@@ -406,6 +406,7 @@ const markdownLookPlugin = ViewPlugin.fromClass(
             let n = line.number + 1;
             while (n <= state.doc.lines) {
               const next = state.doc.line(n);
+							if (next.from > to) break;
               const nextText = next.text;
 
               // 空行はスキップ
