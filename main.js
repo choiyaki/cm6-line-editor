@@ -126,6 +126,7 @@ function onInitialFirestoreLoaded(editor) {
 
   // ★ search を含めず、完全に消す
   const cleanURL = location.origin + location.pathname;
+	alert(cleanURL)
   history.replaceState(null, "", cleanURL);
 }
 
