@@ -118,7 +118,7 @@ let isInitializing = true; // ★ 追加
 
 function onInitialFirestoreLoaded(editor) {
   if (!pendingAppendText || appendApplied) return;
-
+alert("ok")
   applyAppend(editor, pendingAppendText);
 
   appendApplied = true;
