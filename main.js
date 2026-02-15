@@ -118,14 +118,15 @@ let isInitializing = true; // ★ 追加
 
 function onInitialFirestoreLoaded(editor) {
   if (!pendingAppendText || appendApplied) return;
-alert("ok")
+
   applyAppend(editor, pendingAppendText);
 
   appendApplied = true;
   pendingAppendText = null;
 
-  // ★ ここで初めて URL を消す
-  history.replaceState(null, "", location.pathname);
+  // ★ search を含めず、完全に消す
+  const cleanURL = location.origin + location.pathname;
+  history.replaceState(null, "", cleanURL);
 }
 
 function applyAppend(editor, text) {
