@@ -94,7 +94,7 @@ function buildExportText(state) {
 
   return resultBlocks.join("\n\n");
 }
-
+/*
 function consumeAppendTextFromURL() {
   const params = new URLSearchParams(location.search);
   const text = params.get("text");
@@ -104,9 +104,14 @@ function consumeAppendTextFromURL() {
   history.replaceState(null, "", location.pathname);
 
   return text;
+}*/
+
+function readAppendTextFromURL() {
+  const params = new URLSearchParams(location.search);
+  return params.get("text");
 }
 
-let pendingAppendText = consumeAppendTextFromURL();
+let pendingAppendText = readAppendTextFromURL();
 let appendApplied = false;
 
 let isInitializing = true; // ★ 追加
@@ -118,6 +123,9 @@ function onInitialFirestoreLoaded(editor) {
 
   appendApplied = true;
   pendingAppendText = null;
+
+  // ★ ここで初めて URL を消す
+  history.replaceState(null, "", location.pathname);
 }
 
 function applyAppend(editor, text) {
