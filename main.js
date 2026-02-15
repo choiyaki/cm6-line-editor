@@ -97,7 +97,7 @@ function buildExportText(state) {
 
 function consumeAppendTextFromURL() {
   const params = new URLSearchParams(location.search);
-  const text = params.get("append");
+  const text = params.get("text");
   if (!text) return null;
 
   // URL を即消す（超重要）
@@ -391,13 +391,45 @@ const markdownLookPlugin = ViewPlugin.fromClass(
           }
 
           /* --- チェックボックス --- */
-          else if (/^\s*- \[x\]\s+/.test(text)) {
+          else /* === 完了チェックボックス === */
+          if (/^\s*- \[x\]\s+/.test(text)) {
+            const baseIndent = getIndentLevel(text);
+
+            // 自身
             decos.push(
               Decoration.line({
                 class: "cm-md-checkbox-done"
               }).range(line.from)
             );
+
+            // 下位を走査
+            let n = line.number + 1;
+            while (n <= state.doc.lines) {
+              const next = state.doc.line(n);
+              const nextText = next.text;
+
+              // 空行はスキップ
+              if (nextText.trim() === "") {
+                n++;
+                continue;
+              }
+
+              const nextIndent = getIndentLevel(nextText);
+
+              // 同階層 or 上位で終了
+              if (nextIndent <= baseIndent) break;
+
+              decos.push(
+                Decoration.line({
+                  class: "cm-md-done-child"
+                }).range(next.from)
+              );
+
+              n++;
+            }
           }
+
+
 
           else if (/^\s*- \[ \]\s+/.test(text)) {
             decos.push(
@@ -428,7 +460,10 @@ const markdownLookPlugin = ViewPlugin.fromClass(
   }
 );
 
-
+function getIndentLevel(text) {
+  const m = text.match(/^(\s*)/);
+  return m ? Math.floor(m[1].length / 2) : 0;
+}
 
 
 const fixEmptyLineBackspace = keymap.of([
