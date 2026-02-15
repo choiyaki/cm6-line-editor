@@ -126,8 +126,9 @@ alert("ok")
 
   // ★ search を含めず、完全に消す
   //const cleanURL = location.origin + location.pathname;
-alert("clean")
+
   history.replaceState(null, "", "https://choiyaki.github.io/cm6-line-editor/");
+alert("cleanok")
 }
 
 function applyAppend(editor, text) {
