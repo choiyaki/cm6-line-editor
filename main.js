@@ -58,54 +58,30 @@ try {
   console.warn("setPersistence failed", e);
 }
 
-function buildExportText(state) {
-  const lines = state.doc.toString().split("\n");
+function buildExportText(doc) {
+  // CodeMirror の doc → 文字列
+  const fullText = doc.toString();
 
-  const resultBlocks = [];
-  let currentBlock = [];
-
-  function flushBlock() {
-    if (currentBlock.length === 0) return;
-
-    const firstLine = currentBlock[0];
-
-    // ★ 除外条件（ブロック1行目）
-    if (
-      firstLine.startsWith("📝") ||
-      firstLine.startsWith("📓")
-    ) {
-      currentBlock = [];
-      return;
-    }
-
-    resultBlocks.push(currentBlock.join("\n"));
-    currentBlock = [];
-  }
-
-  for (const line of lines) {
-    if (isBlockSeparatorLine(line)) {
-      flushBlock();
-    } else {
-      currentBlock.push(line);
-    }
-  }
-
-  // 最後のブロック
-  flushBlock();
-
-  return resultBlocks.join("\n\n");
+  return removeMarkedBlocks(fullText);
 }
-/*
-function consumeAppendTextFromURL() {
-  const params = new URLSearchParams(location.search);
-  const text = params.get("text");
-  if (!text) return null;
 
-  // URL を即消す（超重要）
-  history.replaceState(null, "", location.pathname);
+function removeMarkedBlocks(text) {
+  // 空行（1行以上）でブロック分割
+  const blocks = text.split(/\n\s*\n/);
 
-  return text;
-}*/
+  const cleanedBlocks = blocks.filter(block => {
+    const firstLine = block.split("\n")[0] ?? "";
+
+    // 先頭行に 📝 or 📓 があれば除外
+    return !(
+      firstLine.includes("📝") ||
+      firstLine.includes("📓")
+    );
+  });
+
+  // 空行2行で再結合（Markdownとして自然）
+  return cleanedBlocks.join("\n\n");
+}
 
 function readAppendTextFromURL() {
   const params = new URLSearchParams(location.search);
