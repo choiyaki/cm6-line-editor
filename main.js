@@ -1368,7 +1368,7 @@ function exportDocument(view) {
     localStorage.getItem("cm6-title")?.trim() || "無題";
 
   // ★ ブロック除外済み本文
-  const filteredBody = buildExportText(view.state)
+  const filteredBody = buildExportText(view.state.doc)
     .replace(/  /g, " ")
     .replace(/\- /g, " ");
 
