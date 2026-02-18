@@ -39,7 +39,8 @@ import {
   setDoc,
   onSnapshot,
   getDoc,
-  serverTimestamp
+  serverTimestamp,
+	getDocFromServer
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 import {
@@ -218,13 +219,15 @@ onAuthStateChanged(auth, async user => {
 let unsubscribe = null;
 
 async function startFirestoreSync(view, ref) {
+	
   if (!view) return;
   stopFirestoreSync();
 
   isInitializing = true;
 
   try {
-    const snap = await getDoc(ref);
+    // ★ ここが最大のポイント
+    const snap = await getDocFromServer(ref);
 
     if (snap.exists()) {
       const data = snap.data();
@@ -243,13 +246,14 @@ async function startFirestoreSync(view, ref) {
       });
       isApplyingRemote = false;
     }
+
   } catch (e) {
     console.warn("offline mode", e);
 
-    // ===== オフライン起動 =====
+    // ===== オフライン起動（ここが必ず来る）=====
+		
     const cached = loadFromLocal();
-
-    appendStart = cached.length + 2; // "\n\n" の後ろ
+    appendStart = cached.length + 2;
     isOfflineMode = true;
 
     view.dispatch({
@@ -261,9 +265,7 @@ async function startFirestoreSync(view, ref) {
     });
   }
 
-  isInitializing = false; // ★ 初期ロード完了
-
-  // ★ URL ?text= の反映
+  isInitializing = false;
   onInitialFirestoreLoaded(view);
 
   // ===== リアルタイム同期 =====
