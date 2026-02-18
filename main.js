@@ -58,6 +58,52 @@ try {
   console.warn("setPersistence failed", e);
 }
 
+// ===== append モード管理 =====
+let appendStart = null;     // number | null
+let isOfflineMode = false; // 表示用
+
+const appendRestrictExtension =
+  EditorState.transactionFilter.of(tr => {
+    if (appendStart == null) return tr; // オンライン時は自由
+
+    // appendStart より前に変更が及んだら拒否
+    for (const r of tr.changes.iterRanges()) {
+      if (r.from < appendStart) {
+        return []; // この操作を無効化
+      }
+    }
+    return tr;
+  });
+
+	
+const appendReadonlyDecoration = ViewPlugin.fromClass(
+  class {
+    constructor(view) {
+      this.decorations = this.build(view);
+    }
+
+    update(update) {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = this.build(update.view);
+      }
+    }
+
+    build(view) {
+      if (appendStart == null) return Decoration.none;
+
+      return Decoration.set([
+        Decoration.mark({
+          class: "cm-append-readonly"
+        }).range(0, appendStart)
+      ]);
+    }
+  },
+  {
+    decorations: v => v.decorations
+  }
+);
+
+
 function buildExportText(doc) {
   // CodeMirror の doc → 文字列
   const fullText = doc.toString();
@@ -177,63 +223,103 @@ async function startFirestoreSync(view, ref) {
 
   isInitializing = true;
 
-  // --- 初回ロード ---
-  const snap = await getDoc(ref);
-  if (snap.exists()) {
-    const data = snap.data();
+  try {
+    const snap = await getDoc(ref);
 
-		const text = data.text ?? "";
-		const title = data.title ?? "無題";
-		
-		/* --- text --- */
-		isApplyingRemote = true;
-		view.dispatch({
-		  changes: {
-		    from: 0,
-		    to: view.state.doc.length,
-		    insert: text
-		  }
-		});
-		isApplyingRemote = false;
-		
-		/* --- title --- */
-		applyTitleFromRemote(title);
+    if (snap.exists()) {
+      const data = snap.data();
+      const text = data.text ?? "";
+
+      appendStart = null;
+      isOfflineMode = false;
+
+      isApplyingRemote = true;
+      view.dispatch({
+        changes: {
+          from: 0,
+          to: view.state.doc.length,
+          insert: text
+        }
+      });
+      isApplyingRemote = false;
+    }
+  } catch (e) {
+    console.warn("offline mode", e);
+
+    // ===== オフライン起動 =====
+    const cached = loadFromLocal();
+
+    appendStart = cached.length + 2; // "\n\n" の後ろ
+    isOfflineMode = true;
+
+    view.dispatch({
+      changes: {
+        from: 0,
+        to: view.state.doc.length,
+        insert: cached + "\n\n"
+      }
+    });
   }
 
-  isInitializing = false; // ★ Firestore同期完了
+  isInitializing = false; // ★ 初期ロード完了
 
-    // ★ ここで URL テキストを適用（必ず空行1行）
-	onInitialFirestoreLoaded(view);
+  // ★ URL ?text= の反映
+  onInitialFirestoreLoaded(view);
 
-  // --- リアルタイム同期 ---
+  // ===== リアルタイム同期 =====
   unsubscribe = onSnapshot(ref, snap => {
     if (!snap.exists()) return;
+
+    const data = snap.data();
+    const remoteText = data.text ?? "";
+    const remoteTitle = data.title ?? "無題";
+
+    // ===== オフライン → オンライン復帰 =====
+    if (isOfflineMode && appendStart != null) {
+      const current = view.state.doc.toString();
+      const appendText = current.slice(appendStart);
+
+      appendStart = null;
+      isOfflineMode = false;
+
+      isApplyingRemote = true;
+      view.dispatch({
+        changes: {
+          from: 0,
+          to: view.state.doc.length,
+          insert: remoteText + appendText
+        }
+      });
+      isApplyingRemote = false;
+
+      // タイトルも同期
+      if (titleInput.value !== remoteTitle) {
+        applyTitleFromRemote(remoteTitle);
+      }
+
+      return; // ★ 通常同期はしない
+    }
+
+    // ===== 通常同期 =====
     if (isApplyingRemote) return;
     if (view.hasFocus || isComposing || isLocalEditing) return;
 
-    const data = snap.data();
+    const current = view.state.doc.toString();
+    if (remoteText !== current) {
+      isApplyingRemote = true;
+      view.dispatch({
+        changes: {
+          from: 0,
+          to: view.state.doc.length,
+          insert: remoteText
+        }
+      });
+      isApplyingRemote = false;
+    }
 
-		const remoteText = data.text ?? "";
-		const remoteTitle = data.title ?? "無題";
-		
-		/* --- text 同期（今まで通り） --- */
-		const current = view.state.doc.toString();
-		if (remoteText !== current) {
-		  isApplyingRemote = true;
-		  view.dispatch({
-		    changes: {
-		      from: 0,
-		      to: view.state.doc.length,
-		      insert: remoteText
-		    }
-		  });
-		  isApplyingRemote = false;
-		}
-		
-		/* --- title 同期 --- */
-		if (titleInput.value !== remoteTitle) {
-		  applyTitleFromRemote(remoteTitle);
-		}
+    if (titleInput.value !== remoteTitle) {
+      applyTitleFromRemote(remoteTitle);
+    }
   });
 }
 
@@ -1428,7 +1514,7 @@ function scheduleSave(state) {
   if (isInitializing) return;
   if (isApplyingRemote) return;
   if (isComposing) return;
-console.log("save")
+	if (appendStart != null) return;
   if (saveTimer) clearTimeout(saveTimer);
 
   saveTimer = setTimeout(() => {
@@ -2002,6 +2088,8 @@ const state = EditorState.create({
   doc: loadFromLocal(),
   extensions: [
 		EditorView.lineWrapping,
+		appendRestrictExtension,
+  	appendReadonlyDecoration,
 		headerFocusWatcher,
 		imeWatcher,
 		syncExtension,
