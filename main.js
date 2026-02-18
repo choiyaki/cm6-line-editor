@@ -230,6 +230,7 @@ async function startFirestoreSync(view, ref) {
     const snap = await getDocFromServer(ref);
 
     if (snap.exists()) {
+			alert("on")
       const data = snap.data();
       const text = data.text ?? "";
 
@@ -249,7 +250,7 @@ async function startFirestoreSync(view, ref) {
 
   } catch (e) {
     console.warn("offline mode", e);
-
+alert("off")
     // ===== オフライン起動（ここが必ず来る）=====
 		
     const cached = loadFromLocal();
