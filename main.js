@@ -218,58 +218,14 @@ onAuthStateChanged(auth, async user => {
 
 let unsubscribe = null;
 
-async function startFirestoreSync(view, ref) {
-	
+function startFirestoreSync(view, ref) {
   if (!view) return;
   stopFirestoreSync();
 
   isInitializing = true;
 
-  try {
-    // ★ ここが最大のポイント
-    const snap = await getDocFromServer(ref);
+  let firstSnapshot = true;
 
-    if (snap.exists()) {
-			alert("on")
-      const data = snap.data();
-      const text = data.text ?? "";
-
-      appendStart = null;
-      isOfflineMode = false;
-
-      isApplyingRemote = true;
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: text
-        }
-      });
-      isApplyingRemote = false;
-    }
-
-  } catch (e) {
-    console.warn("offline mode", e);
-alert("off")
-    // ===== オフライン起動（ここが必ず来る）=====
-		
-    const cached = loadFromLocal();
-    appendStart = cached.length + 2;
-    isOfflineMode = true;
-
-    view.dispatch({
-      changes: {
-        from: 0,
-        to: view.state.doc.length,
-        insert: cached + "\n\n"
-      }
-    });
-  }
-
-  isInitializing = false;
-  onInitialFirestoreLoaded(view);
-
-  // ===== リアルタイム同期 =====
   unsubscribe = onSnapshot(ref, snap => {
     if (!snap.exists()) return;
 
@@ -277,8 +233,60 @@ alert("off")
     const remoteText = data.text ?? "";
     const remoteTitle = data.title ?? "無題";
 
-    // ===== オフライン → オンライン復帰 =====
-    if (isOfflineMode && appendStart != null) {
+    /* ==================================================
+     * 初回 snapshot（起動時）
+     * ================================================== */
+    if (firstSnapshot) {
+      firstSnapshot = false;
+
+      if (snap.metadata.fromCache) {
+        // ===== オフライン起動 =====
+				alert("off")
+        const cached = loadFromLocal() ?? "";
+
+        appendStart = cached.length + 2; // "\n\n" 分
+        isOfflineMode = true;
+
+        view.dispatch({
+          changes: {
+            from: 0,
+            to: view.state.doc.length,
+            insert: cached + "\n\n"
+          }
+        });
+      } else {
+        // ===== オンライン起動 =====
+				alert("on")
+        appendStart = null;
+        isOfflineMode = false;
+
+        isApplyingRemote = true;
+        view.dispatch({
+          changes: {
+            from: 0,
+            to: view.state.doc.length,
+            insert: remoteText
+          }
+        });
+        isApplyingRemote = false;
+      }
+
+      // title 反映
+      applyTitleFromRemote(remoteTitle);
+
+      isInitializing = false;
+      onInitialFirestoreLoaded(view);
+      return;
+    }
+
+    /* ==================================================
+     * オフライン → オンライン復帰
+     * ================================================== */
+    if (
+      isOfflineMode &&
+      appendStart != null &&
+      !snap.metadata.fromCache
+    ) {
       const current = view.state.doc.toString();
       const appendText = current.slice(appendStart);
 
@@ -295,15 +303,13 @@ alert("off")
       });
       isApplyingRemote = false;
 
-      // タイトルも同期
-      if (titleInput.value !== remoteTitle) {
-        applyTitleFromRemote(remoteTitle);
-      }
-
-      return; // ★ 通常同期はしない
+      applyTitleFromRemote(remoteTitle);
+      return;
     }
 
-    // ===== 通常同期 =====
+    /* ==================================================
+     * 通常のリアルタイム同期
+     * ================================================== */
     if (isApplyingRemote) return;
     if (view.hasFocus || isComposing || isLocalEditing) return;
 
