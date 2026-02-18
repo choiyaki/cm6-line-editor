@@ -39,8 +39,7 @@ import {
   setDoc,
   onSnapshot,
   getDoc,
-  serverTimestamp,
-	getDocFromServer
+  serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 
 import {
@@ -59,50 +58,10 @@ try {
   console.warn("setPersistence failed", e);
 }
 
-// ===== append モード管理 =====
-let appendStart = null;     // number | null
-let isOfflineMode = false; // 表示用
+let syncMode = "INIT"; 
+// INIT | OFFLINE | ONLINE_LOADING | ONLINE_READY
 
-const appendRestrictExtension =
-  EditorState.transactionFilter.of(tr => {
-    if (appendStart == null) return tr; // オンライン時は自由
-
-    // appendStart より前に変更が及んだら拒否
-    for (const r of tr.changes.iterRanges()) {
-      if (r.from < appendStart) {
-        return []; // この操作を無効化
-      }
-    }
-    return tr;
-  });
-
-	
-const appendReadonlyDecoration = ViewPlugin.fromClass(
-  class {
-    constructor(view) {
-      this.decorations = this.build(view);
-    }
-
-    update(update) {
-      if (update.docChanged || update.viewportChanged) {
-        this.decorations = this.build(update.view);
-      }
-    }
-
-    build(view) {
-      if (appendStart == null) return Decoration.none;
-
-      return Decoration.set([
-        Decoration.mark({
-          class: "cm-append-readonly"
-        }).range(0, appendStart)
-      ]);
-    }
-  },
-  {
-    decorations: v => v.decorations
-  }
-);
+let appendStart = null;
 
 
 function buildExportText(doc) {
@@ -218,100 +177,82 @@ onAuthStateChanged(auth, async user => {
 
 let unsubscribe = null;
 
-function startFirestoreSync(view, ref) {
+async function startFirestoreSync(view, ref) {
   if (!view) return;
   stopFirestoreSync();
 
   isInitializing = true;
+  syncMode = "ONLINE_LOADING";
 
-  let firstSnapshot = true;
+  let snap;
 
+  // ===== ① Firestore 初回取得 =====
+  try {
+    snap = await getDoc(ref);
+  } catch (e) {
+    // ===== オフライン起動 =====
+    console.log("📴 offline start");
+
+    syncMode = "OFFLINE";
+
+    const localText = loadFromLocal();
+    const localTitle = loadTitleLocal();
+
+    // 本文を localStorage から表示
+    isApplyingRemote = true;
+    view.dispatch({
+      changes: {
+        from: 0,
+        to: view.state.doc.length,
+        insert: localText
+      }
+    });
+    isApplyingRemote = false;
+
+    // タイトルも local
+    applyTitleFromRemote(localTitle);
+
+    // ★ append 領域開始位置を固定
+    appendStart = localText.length;
+
+    isInitializing = false;
+    return;
+  }
+
+  // ===== ② オンラインで初回取得できた =====
+  if (snap.exists()) {
+    const data = snap.data();
+    const text = data.text ?? "";
+    const title = data.title ?? "無題";
+
+    isApplyingRemote = true;
+    view.dispatch({
+      changes: {
+        from: 0,
+        to: view.state.doc.length,
+        insert: text
+      }
+    });
+    isApplyingRemote = false;
+
+    applyTitleFromRemote(title);
+  }
+
+  syncMode = "ONLINE_READY";
+  isInitializing = false;
+
+  // URL append（オンライン時）
+  onInitialFirestoreLoaded(view);
+
+  // ===== ③ リアルタイム同期 =====
   unsubscribe = onSnapshot(ref, snap => {
     if (!snap.exists()) return;
+    if (isApplyingRemote) return;
+    if (view.hasFocus || isComposing || isLocalEditing) return;
 
     const data = snap.data();
     const remoteText = data.text ?? "";
     const remoteTitle = data.title ?? "無題";
-
-    /* ==================================================
-     * 初回 snapshot（起動時）
-     * ================================================== */
-    if (firstSnapshot) {
-      firstSnapshot = false;
-
-      if (snap.metadata.fromCache) {
-        // ===== オフライン起動 =====
-				alert("off")
-        const cached = loadFromLocal() ?? "";
-
-        appendStart = cached.length + 2; // "\n\n" 分
-        isOfflineMode = true;
-
-        view.dispatch({
-          changes: {
-            from: 0,
-            to: view.state.doc.length,
-            insert: cached + "\n\n"
-          }
-        });
-      } else {
-        // ===== オンライン起動 =====
-				alert("on")
-        appendStart = null;
-        isOfflineMode = false;
-
-        isApplyingRemote = true;
-        view.dispatch({
-          changes: {
-            from: 0,
-            to: view.state.doc.length,
-            insert: remoteText
-          }
-        });
-        isApplyingRemote = false;
-      }
-
-      // title 反映
-      applyTitleFromRemote(remoteTitle);
-
-      isInitializing = false;
-      onInitialFirestoreLoaded(view);
-      return;
-    }
-
-    /* ==================================================
-     * オフライン → オンライン復帰
-     * ================================================== */
-    if (
-      isOfflineMode &&
-      appendStart != null &&
-      !snap.metadata.fromCache
-    ) {
-      const current = view.state.doc.toString();
-      const appendText = current.slice(appendStart);
-
-      appendStart = null;
-      isOfflineMode = false;
-
-      isApplyingRemote = true;
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: remoteText + appendText
-        }
-      });
-      isApplyingRemote = false;
-
-      applyTitleFromRemote(remoteTitle);
-      return;
-    }
-
-    /* ==================================================
-     * 通常のリアルタイム同期
-     * ================================================== */
-    if (isApplyingRemote) return;
-    if (view.hasFocus || isComposing || isLocalEditing) return;
 
     const current = view.state.doc.toString();
     if (remoteText !== current) {
@@ -429,6 +370,19 @@ const syncExtension = EditorView.updateListener.of(update => {
   if (isInitializing) return;
   if (isApplyingRemote) return;
   if (isComposing) return;
+
+  // ★ オフライン時は append 領域のみ許可
+  if (syncMode === "OFFLINE" && appendStart != null) {
+    const tr = update.transactions[0];
+    if (!tr) return;
+
+    for (const c of tr.changes.iterChanges()) {
+      if (c.from < appendStart) {
+        return; // 変更を無視
+      }
+    }
+  }
+
   scheduleSave(update.state);
 });
 
@@ -1523,7 +1477,7 @@ function scheduleSave(state) {
   if (isInitializing) return;
   if (isApplyingRemote) return;
   if (isComposing) return;
-	if (appendStart != null) return;
+console.log("save")
   if (saveTimer) clearTimeout(saveTimer);
 
   saveTimer = setTimeout(() => {
@@ -2097,8 +2051,7 @@ const state = EditorState.create({
   doc: loadFromLocal(),
   extensions: [
 		EditorView.lineWrapping,
-		appendRestrictExtension,
-  	appendReadonlyDecoration,
+		EditorView.editable.of(() => syncMode === "OFFLINE" || syncMode === "ONLINE_READY"),
 		headerFocusWatcher,
 		imeWatcher,
 		syncExtension,
