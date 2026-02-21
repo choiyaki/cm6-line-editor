@@ -13,7 +13,8 @@ import {
 import {
   EditorState,
   StateEffect,
-	EditorSelection
+	EditorSelection,
+	RangeSetBuilder
 } from "https://esm.sh/@codemirror/state";
 
 import {
@@ -52,17 +53,375 @@ import {
   browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
+// ===== ドキュメント識別子（最重要） =====
+let currentDocPath = null;
+let currentUser = null;
+let isRecovering = false;
+
+function resolveCurrentDocPath() {
+  const params = new URLSearchParams(location.search);
+  const page = params.get("page") ?? "main"; // ← 今後拡張しやすい
+  return { page };
+}
+
+// ★ アプリ起動直後に一度だけ確定させる
+const { page } = resolveCurrentDocPath();
+currentDocPath = page;
+
+let networkState = "ONLINE"; 
+// "ONLINE" | "OFFLINE"
+let appendStart = null;
+
+function updateNetworkState(online) {
+  networkState = online ? "ONLINE" : "OFFLINE";
+
+  console.log("🌐 network:", networkState);
+
+  // CSS 用（今は色を付けなくてOK）
+  document.body.classList.toggle("is-offline", !online);
+}
+
+window.addEventListener("online", async () => {
+  console.log("[online] fired");
+
+  updateNetworkState(true);
+
+  // 先に recover
+  if (appendStart !== null) {
+    console.log("[online] start recover");
+    await recoverFromOffline(editorView, docRef);
+  }
+
+  // recover 完了後に sync
+  console.log("[online] start firestore sync");
+  startFirestoreSync(editorView, docRef);
+});
+
+window.addEventListener("offline", () => {
+  updateNetworkState(false);
+	
+	if (editorView && appendStart === null) {
+    appendStart = editorView.state.doc.length;
+    console.log("[offline] appendStart =", appendStart);
+  }
+	
+	// ② 末尾に改行を2つ append
+  editorView.dispatch({
+    changes: {
+      from: editorView.state.doc.length,
+      to: editorView.state.doc.length,
+      insert: "\n\n"
+    }
+  });
+	
+});
+
+// 初期状態
+updateNetworkState(navigator.onLine);
+
+if (!navigator.onLine) {
+  appendStart = loadFromLocal().length;
+	syncMode = "OFFLINE";
+}
+
+let unsubscribe = null;
+
+async function startFirestoreSync(view, ref) {
+  console.log("[sync] start");
+
+  if (!view || !ref) {
+    console.warn("[sync] abort: invalid args");
+    return;
+  }
+
+  stopFirestoreSync();
+
+  isInitializing = true;
+  syncMode = "ONLINE_LOADING";
+
+  let snap;
+  try {
+    snap = await getDoc(ref);
+  } catch (e) {
+    console.error("[sync] getDoc failed → OFFLINE", e);
+    syncMode = "OFFLINE";
+    isInitializing = false;
+    return;
+  }
+
+  if (!snap.exists()) {
+    console.warn("[sync] doc not found");
+    isInitializing = false;
+    return;
+  }
+
+  const data = snap.data();
+  const text = data.text ?? "";
+  const title = data.title ?? "無題";
+
+  // --- apply initial state ---
+  isApplyingRemote = true;
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: text }
+  });
+  isApplyingRemote = false;
+
+  applyTitleFromRemote(title);
+  localStorage.setItem(LOCAL_TEXT_KEY, text);
+  saveTitleLocal(title);
+
+  // --- URL append ---
+  onInitialFirestoreLoaded(view);
+
+  syncMode = "ONLINE_READY";
+  isInitializing = false;
+
+  console.log("[sync] ONLINE_READY");
+
+  // --- realtime sync ---
+  unsubscribe = onSnapshot(ref, snap => {
+  if (isRecovering) {
+    console.log("[snapshot] ignored (recovering)");
+    return;
+  }
+
+		console.log("---- [snapshot] fired ----");
+
+  try {
+    console.log("[snapshot] exists =", snap.exists());
+    console.log("[snapshot] fromCache =", snap.metadata.fromCache);
+    console.log("[snapshot] hasPendingWrites =", snap.metadata.hasPendingWrites);
+    console.log("[snapshot] syncMode =", syncMode);
+    console.log("[snapshot] isApplyingRemote =", isApplyingRemote);
+    console.log("[snapshot] hasFocus =", view?.hasFocus);
+    console.log("[snapshot] isComposing =", isComposing);
+    console.log("[snapshot] isLocalEditing =", isLocalEditing);
+
+    // ---- return 理由をすべて可視化 ----
+    if (!snap.exists()) {
+      console.log("[snapshot] return: snap does not exist");
+      return;
+    }
+    if (syncMode !== "ONLINE_READY") {
+      console.log("[snapshot] return: syncMode =", syncMode);
+      return;
+    }
+    if (isApplyingRemote) {
+      console.log("[snapshot] return: isApplyingRemote");
+      return;
+    }
+    if (view?.hasFocus) {
+      console.log("[snapshot] return: editor has focus");
+      return;
+    }
+    if (isComposing) {
+      console.log("[snapshot] return: isComposing");
+      return;
+    }
+    if (isLocalEditing) {
+      console.log("[snapshot] return: isLocalEditing");
+      return;
+    }
+
+    // ---- data 取得 ----
+    const data = snap.data();
+    console.log("[snapshot] raw data =", data);
+
+    if (!data) {
+      console.warn("[snapshot] data is undefined → abort");
+      return;
+    }
+
+    const remoteText = data.text ?? "";
+    const remoteTitle = data.title ?? "無題";
+
+    console.log("[snapshot] remoteText length =", remoteText.length);
+    console.log("[snapshot] remoteTitle =", remoteTitle);
+
+    // ---- editor 状態 ----
+    if (!view || !view.state) {
+      console.error("[snapshot] view or view.state is undefined", view);
+      return;
+    }
+
+    const current = view.state.doc.toString();
+    console.log("[snapshot] current length =", current.length);
+
+    // ---- text 同期 ----
+    if (remoteText !== current) {
+      console.log("[snapshot] applying remote text");
+
+      isApplyingRemote = true;
+      view.dispatch({
+        changes: { from: 0, to: current.length, insert: remoteText }
+      });
+      isApplyingRemote = false;
+
+      localStorage.setItem(LOCAL_TEXT_KEY, remoteText);
+      console.log("[snapshot] editor & localStorage updated");
+    } else {
+      console.log("[snapshot] text identical → skip");
+    }
+
+    // ---- title 同期 ----
+    if (!titleInput) {
+      console.error("[snapshot] titleInput is undefined");
+      return;
+    }
+
+    if (titleInput.value !== remoteTitle) {
+      console.log("[snapshot] applying remote title");
+      applyTitleFromRemote(remoteTitle);
+      saveTitleLocal(remoteTitle);
+    } else {
+      console.log("[snapshot] title identical → skip");
+    }
+
+    // ---- Firestore 状態 ----
+    if (!snap.metadata.hasPendingWrites) {
+      console.log("☁️ [snapshot] server synced");
+    } else {
+      console.log("💾 [snapshot] local pending");
+    }
+
+  } catch (e) {
+    console.error("🔥 [snapshot] handler crashed", e);
+    throw e; // ← Load failed の正体を必ず出す
+  }
+});
+}
+
+function scheduleSave(state) {
+  if (isInitializing) return;
+  if (isApplyingRemote) return;
+  if (isComposing) return;
+
+  if (saveTimer) clearTimeout(saveTimer);
+
+  saveTimer = setTimeout(() => {
+
+    // ★ 追加
+    if (networkState === "OFFLINE") {
+      saveToLocal(state);
+      console.log("💾 offline save");
+      return;
+    }
+
+    if (!docRef) {
+      saveToLocal(state);
+      console.log("💾 local save");
+      return;
+    }
+
+    setDoc(
+      docRef,
+      {
+        title: getCurrentTitle(),
+        text: state.doc.toString(),
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    )
+  }, 500);
+}
+
+async function recoverFromOffline(view, ref) {
+  if (isRecovering) return;
+  isRecovering = true;
+
+  let snap;
+  try {
+    snap = await getDoc(ref);
+  } catch (e) {
+    console.error("[recover] getDoc failed", e);
+    isRecovering = false;
+    return;
+  }
+
+  if (!snap.exists()) {
+    isRecovering = false;
+    return;
+  }
+
+  const firestoreText = snap.data().text ?? "";
+	
+	
+  const localText = loadFromLocal() ?? "";
+
+  const appendText = localText.slice(appendStart);
+  const finalText = firestoreText + appendText;
+
+  // Firestore 更新
+  await setDoc(
+    ref,
+    { text: finalText, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+
+  // editor を Firestore 基準で再構築
+  isApplyingRemote = true;
+  view.dispatch({
+    changes: {
+      from: 0,
+      to: view.state.doc.length,
+      insert: finalText
+    }
+  });
+  isApplyingRemote = false;
+
+  localStorage.setItem(LOCAL_TEXT_KEY, finalText);
+
+  // 後始末
+  appendStart = null;        // ログ用なら残してもOK
+  
+  syncMode = "ONLINE_READY";
+  isRecovering = false;
+}
+
+const syncExtension = EditorView.updateListener.of(update => {
+  if (!update.docChanged) return;
+  if (isInitializing) return;
+  if (isApplyingRemote) return;
+  if (isComposing) return;
+  scheduleSave(update.state);
+});
+
+function appendOnlyFilter() {
+  return EditorState.transactionFilter.of(tr => {
+    // ドキュメントを変更しない操作は通す
+    if (!tr.docChanged) return tr;
+
+    // append-only モードでなければ通す
+    if (typeof appendStart !== "number") return tr;
+
+    let invalid = false;
+
+    tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
+      // 🔴 appendStart より前を触っていたらアウト
+      if (fromA < appendStart || toA < appendStart) {
+        invalid = true;
+      }
+    });
+
+    // ❌ 無効な変更は完全に拒否
+    if (invalid) {
+      console.warn("[append-only] blocked change");
+      return [];
+    }
+
+    // ✅ 末尾への追記だけ通す
+    return tr;
+  });
+}
+
+
+
+
 try {
   await setPersistence(auth, browserLocalPersistence);
 } catch (e) {
   console.warn("setPersistence failed", e);
 }
-
-let syncMode = "INIT"; 
-// INIT | OFFLINE | ONLINE_LOADING | ONLINE_READY
-
-let appendStart = null;
-
 
 function buildExportText(doc) {
   // CodeMirror の doc → 文字列
@@ -98,14 +457,17 @@ let pendingAppendText = readAppendTextFromURL();
 let appendApplied = false;
 
 let isInitializing = true; // ★ 追加
+let syncMode = "OFFLINE";
 
 function onInitialFirestoreLoaded(editor) {
   if (!pendingAppendText || appendApplied) return;
+
+  console.log("[initial] apply pending append");
+
   applyAppend(editor, pendingAppendText);
 
   appendApplied = true;
   pendingAppendText = null;
-
 }
 
 function applyAppend(editor, text) {
@@ -152,15 +514,22 @@ logoutBtn.addEventListener("click", async () => {
 
 onAuthStateChanged(auth, async user => {
   if (user) {
+    currentUser = user;
     loginBtn.classList.add("hidden");
     logoutBtn.classList.remove("hidden");
 
     docRef = getUserDocRef(user.uid);
 
-    const snap = await getDoc(docRef);
+    let snap;
+    try {
+      snap = await getDoc(docRef);
+    } catch (e) {
+      console.warn("[auth] getDoc failed (offline?)", e);
+      // ★ オフラインなら local 起動で続行
+      return;
+    }
 
     if (!snap.exists()) {
-      // ★ local の内容を引き継ぐ
       await setDoc(docRef, {
         title: loadTitleLocal(),
         text: loadFromLocal(),
@@ -168,110 +537,13 @@ onAuthStateChanged(auth, async user => {
       });
     }
 
+    console.log("startFirestoreSync");
     startFirestoreSync(view, docRef);
   } else {
     stopFirestoreSync();
     docRef = null;
   }
 });
-
-let unsubscribe = null;
-
-async function startFirestoreSync(view, ref) {
-  if (!view) return;
-  stopFirestoreSync();
-
-  isInitializing = true;
-  syncMode = "ONLINE_LOADING";
-
-  let snap;
-
-  // ===== ① Firestore 初回取得 =====
-  try {
-    snap = await getDoc(ref);
-  } catch (e) {
-    // ===== オフライン起動 =====
-    console.log("📴 offline start");
-
-    syncMode = "OFFLINE";
-
-    const localText = loadFromLocal();
-    const localTitle = loadTitleLocal();
-
-    // 本文を localStorage から表示
-    isApplyingRemote = true;
-    view.dispatch({
-      changes: {
-        from: 0,
-        to: view.state.doc.length,
-        insert: localText
-      }
-    });
-    isApplyingRemote = false;
-
-    // タイトルも local
-    applyTitleFromRemote(localTitle);
-
-    // ★ append 領域開始位置を固定
-    appendStart = localText.length;
-
-    isInitializing = false;
-    return;
-  }
-
-  // ===== ② オンラインで初回取得できた =====
-  if (snap.exists()) {
-    const data = snap.data();
-    const text = data.text ?? "";
-    const title = data.title ?? "無題";
-
-    isApplyingRemote = true;
-    view.dispatch({
-      changes: {
-        from: 0,
-        to: view.state.doc.length,
-        insert: text
-      }
-    });
-    isApplyingRemote = false;
-
-    applyTitleFromRemote(title);
-  }
-
-  syncMode = "ONLINE_READY";
-  isInitializing = false;
-
-  // URL append（オンライン時）
-  onInitialFirestoreLoaded(view);
-
-  // ===== ③ リアルタイム同期 =====
-  unsubscribe = onSnapshot(ref, snap => {
-    if (!snap.exists()) return;
-    if (isApplyingRemote) return;
-    if (view.hasFocus || isComposing || isLocalEditing) return;
-
-    const data = snap.data();
-    const remoteText = data.text ?? "";
-    const remoteTitle = data.title ?? "無題";
-
-    const current = view.state.doc.toString();
-    if (remoteText !== current) {
-      isApplyingRemote = true;
-      view.dispatch({
-        changes: {
-          from: 0,
-          to: view.state.doc.length,
-          insert: remoteText
-        }
-      });
-      isApplyingRemote = false;
-    }
-
-    if (titleInput.value !== remoteTitle) {
-      applyTitleFromRemote(remoteTitle);
-    }
-  });
-}
 
 function applyTitleFromRemote(title) {
   const normalized = title?.trim() || "無題";
@@ -323,69 +595,6 @@ let docRef = null;
 function getUserDocRef(uid) {
   return doc(db, "users", uid, "memos", "main");
 }
-
-
-/*
-function startFullSync(view) {
-  onSnapshot(docRef, snap => {
-    if (!snap.exists()) return;
-    if (isApplyingRemote) return;
-
-    // ★ 追加条件（核心）
-    if (isComposing) return;
-    if (isLocalEditing) return;
-    if (view.hasFocus) return; // ★ フォーカス中は触らない
-
-    const { text } = snap.data();
-    if (typeof text !== "string") return;
-
-    const current = view.state.doc.toString();
-    if (text === current) return;
-
-    isApplyingRemote = true;
-
-    // ★ selection を維持する
-    const sel = view.state.selection.main;
-
-    view.dispatch({
-      changes: {
-        from: 0,
-        to: view.state.doc.length,
-        insert: text
-      },
-      selection: {
-        anchor: Math.min(sel.anchor, text.length),
-        head: Math.min(sel.head, text.length)
-      }
-    });
-
-    isApplyingRemote = false;
-  });
-}
-
-*/
-
-const syncExtension = EditorView.updateListener.of(update => {
-  if (!update.docChanged) return;
-  if (isInitializing) return;
-  if (isApplyingRemote) return;
-  if (isComposing) return;
-
-  // ★ オフライン時は append 領域のみ許可
-  if (syncMode === "OFFLINE" && appendStart != null) {
-    const tr = update.transactions[0];
-    if (!tr) return;
-
-    for (const c of tr.changes.iterChanges()) {
-      if (c.from < appendStart) {
-        return; // 変更を無視
-      }
-    }
-  }
-
-  scheduleSave(update.state);
-});
-
 
 const markdownLookPlugin = ViewPlugin.fromClass(
   class {
@@ -1387,17 +1596,6 @@ if (window.visualViewport) {
   });
 }
 
-// --- 表示制御 ---
-function updateHeaderVisibility() {
-  if (editorFocused && keyboardVisible) {
-    headerEl.classList.add("is-hidden");
-    document.body.classList.add("header-hidden");   // ★ 追加
-  } else {
-    headerEl.classList.remove("is-hidden");
-    document.body.classList.remove("header-hidden"); // ★ 追加
-  }
-}
-
 const headerFocusWatcher = EditorView.domEventHandlers({
   focus() {
     editorFocused = true;
@@ -1473,35 +1671,6 @@ let saveTimer = null;         // debounce用
 
 
 
-function scheduleSave(state) {
-  if (isInitializing) return;
-  if (isApplyingRemote) return;
-  if (isComposing) return;
-console.log("save")
-  if (saveTimer) clearTimeout(saveTimer);
-
-  saveTimer = setTimeout(() => {
-    // ★ ログインしていない → localStorage
-    if (!docRef) {
-      saveToLocal(state);
-      console.log("💾 saved to local");
-      return;
-    }
-
-    // ★ ログインしている → Firestore
-    setDoc(
-      docRef,
-      {
-        title: getCurrentTitle(),
-        text: state.doc.toString(),
-        updatedAt: serverTimestamp()
-      },
-      { merge: true }
-    )
-      .then(() => console.log("🔥 saved to firestore"))
-      .catch(e => console.error("❌ save failed", e));
-  }, 500);
-}
 
 function saveTitle() {
   const value = titleInput.value.trim() || "無題";
@@ -2045,13 +2214,69 @@ function outdentSelection(view) {
   });
 }
 
+// --- 表示制御 ---
+function updateHeaderVisibility() {
+  if (editorFocused && keyboardVisible) {
+    headerEl.classList.add("is-hidden");
+    document.body.classList.add("header-hidden");   // ★ 追加
+  } else {
+    headerEl.classList.remove("is-hidden");
+    document.body.classList.remove("header-hidden"); // ★ 追加
+  }
+}
+
+function appendLockedLines(view) {
+  if (typeof appendStart !== "number") return Decoration.none;
+
+  const builder = new RangeSetBuilder();
+  const doc = view.state.doc;
+
+  let lastLockedLine = doc.lineAt(appendStart).number;
+  lastLockedLine = Math.min(lastLockedLine, doc.lines);
+
+  for (let i = 1; i <= lastLockedLine; i++) {
+    const line = doc.line(i);
+    builder.add(
+      line.from,
+      line.from,
+      Decoration.line({
+        class: "cm-append-locked-line"
+      })
+    );
+  }
+
+  return builder.finish();
+}
+
+const appendLockedLinePlugin = ViewPlugin.fromClass(
+  class {
+    decorations;
+
+    constructor(view) {
+      this.decorations = appendLockedLines(view);
+    }
+
+    update(update) {
+      if (
+        update.docChanged ||
+        update.viewportChanged ||
+        update.selectionSet
+      ) {
+        this.decorations = appendLockedLines(update.view);
+      }
+    }
+  },
+  {
+    decorations: v => v.decorations
+  }
+);
+
 
 
 const state = EditorState.create({
   doc: loadFromLocal(),
   extensions: [
 		EditorView.lineWrapping,
-		EditorView.editable.of(() => syncMode === "OFFLINE" || syncMode === "ONLINE_READY"),
 		headerFocusWatcher,
 		imeWatcher,
 		syncExtension,
@@ -2076,7 +2301,9 @@ const state = EditorState.create({
     ]),
 		blockHeadGutter,
 		blockBodyDecoration,
-		selectionMovePopup
+		selectionMovePopup,
+		appendOnlyFilter(),
+		appendLockedLinePlugin
   ]
 });
 
@@ -2085,8 +2312,6 @@ const view = new EditorView({
   state,
   parent: document.getElementById("editor")
 });
-
-isInitializing = false;
 
 const originalDispatch = view.dispatch.bind(view);
 
