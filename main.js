@@ -58,6 +58,9 @@ let currentDocPath = null;
 let currentUser = null;
 let isRecovering = false;
 
+const LOCAL_TEXT_KEY = "cm6-doc-text";
+const LOCAL_TITLE_KEY = "cm6-doc-title";
+
 function resolveCurrentDocPath() {
   const params = new URLSearchParams(location.search);
   const page = params.get("page") ?? "main"; // ← 今後拡張しやすい
@@ -71,6 +74,11 @@ currentDocPath = page;
 let networkState = "ONLINE"; 
 // "ONLINE" | "OFFLINE"
 let appendStart = null;
+let pendingAppendText = readAppendTextFromURL();
+let appendApplied = false;
+let isInitializing = true; // ★ 追加
+let syncMode = "OFFLINE";
+let unsubscribe = null;
 
 function updateNetworkState(online) {
   networkState = online ? "ONLINE" : "OFFLINE";
@@ -79,6 +87,7 @@ function updateNetworkState(online) {
 
   // CSS 用（今は色を付けなくてOK）
   document.body.classList.toggle("is-offline", !online);
+	console.log("body offline")
 }
 
 window.addEventListener("online", async () => {
@@ -98,6 +107,7 @@ window.addEventListener("online", async () => {
 });
 
 window.addEventListener("offline", () => {
+	console.log("🌐 network:");
   updateNetworkState(false);
 	
 	if (editorView && appendStart === null) {
@@ -116,15 +126,16 @@ window.addEventListener("offline", () => {
 	
 });
 
+
 // 初期状態
 updateNetworkState(navigator.onLine);
 
 if (!navigator.onLine) {
-  appendStart = loadFromLocal().length;
-	syncMode = "OFFLINE";
+  const localText = loadFromLocal() ?? "";
+  appendStart = localText.length;
+  syncMode = "OFFLINE";
+	console.log("check");
 }
-
-let unsubscribe = null;
 
 async function startFirestoreSync(view, ref) {
   console.log("[sync] start");
@@ -414,9 +425,6 @@ function appendOnlyFilter() {
   });
 }
 
-
-
-
 try {
   await setPersistence(auth, browserLocalPersistence);
 } catch (e) {
@@ -452,12 +460,6 @@ function readAppendTextFromURL() {
   const params = new URLSearchParams(location.search);
   return params.get("text");
 }
-
-let pendingAppendText = readAppendTextFromURL();
-let appendApplied = false;
-
-let isInitializing = true; // ★ 追加
-let syncMode = "OFFLINE";
 
 function onInitialFirestoreLoaded(editor) {
   if (!pendingAppendText || appendApplied) return;
@@ -1877,9 +1879,6 @@ const moveLineKeymap = keymap.of([
   }
 ]);
 
-const LOCAL_TEXT_KEY = "cm6-doc-text";
-const LOCAL_TITLE_KEY = "cm6-doc-title";
-
 function saveToLocal(state) {
   localStorage.setItem(
     LOCAL_TEXT_KEY,
@@ -2306,7 +2305,6 @@ const state = EditorState.create({
 		appendLockedLinePlugin
   ]
 });
-
 
 const view = new EditorView({
   state,
