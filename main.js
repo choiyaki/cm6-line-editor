@@ -619,6 +619,7 @@ function stopFirestoreSync() {
 
 
 // 外側クリックで閉じる（かなり大事）
+/*
 document.addEventListener("click", (e) => {
   if (
     !menuPanel.contains(e.target) &&
@@ -627,7 +628,31 @@ document.addEventListener("click", (e) => {
     menuPanel.hidden = true;
   }
 });
+*/
 
+window.addEventListener("DOMContentLoaded", () => {
+  const menuBtn = document.getElementById("menu-btn");
+  const menuPanel = document.getElementById("menu-panel");
+
+  if (!menuBtn || !menuPanel) {
+    console.warn("menuBtn or menuPanel not found");
+    return;
+  }
+
+  menuBtn.addEventListener("click", () => {
+    menuPanel.hidden = !menuPanel.hidden;
+  });
+
+  // 外側クリックで閉じる
+  document.addEventListener("click", (e) => {
+    if (
+      !menuPanel.contains(e.target) &&
+      e.target !== menuBtn
+    ) {
+      menuPanel.hidden = true;
+    }
+  });
+});
 
 
 
