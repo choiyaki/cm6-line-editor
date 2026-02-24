@@ -87,7 +87,6 @@ function updateNetworkState(online) {
 
   // CSS 用（今は色を付けなくてOK）
   document.body.classList.toggle("is-offline", !online);
-	console.log("body offline")
 }
 
 window.addEventListener("online", async () => {
@@ -491,27 +490,30 @@ function applyAppend(editor, text) {
   });
 }
 
-const loginBtn = document.getElementById("login-btn");
-const logoutBtn = document.getElementById("logout-btn");
-const menuUser = document.getElementById("menu-user");
-/*
-loginBtn.addEventListener("click", async () => {
-  await signInWithRedirect(auth, provider);
-});*/
-loginBtn.addEventListener("click", async () => {
-  try {
-    const result = await signInWithPopup(auth, provider);
-    console.log("login success", result.user);
-  } catch (e) {
-    console.error(e);
+window.addEventListener("DOMContentLoaded", () => {
+  const loginBtn = document.getElementById("login-btn");
+  const logoutBtn = document.getElementById("logout-btn");
+  const menuUser = document.getElementById("menu-user");
+
+  if (!loginBtn || !logoutBtn) {
+    console.warn("login/logout button not found");
+    return;
   }
-});
 
-logoutBtn.addEventListener("click", async () => {
-  await signOut(auth);
-  menuPanel.hidden = true;
-});
+  loginBtn.addEventListener("click", async () => {
+    try {
+      const result = await signInWithPopup(auth, provider);
+      console.log("login success", result.user);
+    } catch (e) {
+      console.error(e);
+    }
+  });
 
+  logoutBtn.addEventListener("click", async () => {
+    await signOut(auth);
+    menuPanel.hidden = true;
+  });
+});
 
 
 onAuthStateChanged(auth, async user => {
