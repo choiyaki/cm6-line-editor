@@ -494,7 +494,7 @@ const loginBtn = document.getElementById("login-btn");
 const logoutBtn = document.getElementById("logout-btn");
 const menuUser = document.getElementById("menu-user");
 
-
+/*
 loginBtn.addEventListener("click", async () => {
   try {
     const result = await signInWithPopup(auth, provider);
@@ -508,7 +508,40 @@ logoutBtn.addEventListener("click", async () => {
   await signOut(auth);
   menuPanel.hidden = true;
 });
+*/
 
+const menuBtn = document.getElementById("menu-btn");
+const menuPanel = document.getElementById("menu-panel");
+
+menuBtn.addEventListener("click", () => {
+  menuPanel.hidden = !menuPanel.hidden;
+});
+
+
+window.addEventListener("DOMContentLoaded", () => {
+  const loginBtn = document.getElementById("login-btn");
+  const logoutBtn = document.getElementById("logout-btn");
+  const menuUser = document.getElementById("menu-user");
+
+  if (!loginBtn || !logoutBtn) {
+    console.warn("login/logout button not found");
+    return;
+  }
+
+  loginBtn.addEventListener("click", async () => {
+    try {
+      const result = await signInWithPopup(auth, provider);
+      console.log("login success", result.user);
+    } catch (e) {
+      console.error(e);
+    }
+  });
+
+  logoutBtn.addEventListener("click", async () => {
+    await signOut(auth);
+    menuPanel.hidden = true;
+  });
+});
 
 onAuthStateChanged(auth, async user => {
   if (user) {
@@ -561,12 +594,6 @@ function stopFirestoreSync() {
 }
 
 
-const menuBtn = document.getElementById("menu-btn");
-const menuPanel = document.getElementById("menu-panel");
-
-menuBtn.addEventListener("click", () => {
-  menuPanel.hidden = !menuPanel.hidden;
-});
 
 // 外側クリックで閉じる（かなり大事）
 document.addEventListener("click", (e) => {
