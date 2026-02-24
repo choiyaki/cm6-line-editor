@@ -490,29 +490,23 @@ function applyAppend(editor, text) {
   });
 }
 
-window.addEventListener("DOMContentLoaded", () => {
-  const loginBtn = document.getElementById("login-btn");
-  const logoutBtn = document.getElementById("logout-btn");
-  const menuUser = document.getElementById("menu-user");
+const loginBtn = document.getElementById("login-btn");
+const logoutBtn = document.getElementById("logout-btn");
+const menuUser = document.getElementById("menu-user");
 
-  if (!loginBtn || !logoutBtn) {
-    console.warn("login/logout button not found");
-    return;
+
+loginBtn.addEventListener("click", async () => {
+  try {
+    const result = await signInWithPopup(auth, provider);
+    console.log("login success", result.user);
+  } catch (e) {
+    console.error(e);
   }
+});
 
-  loginBtn.addEventListener("click", async () => {
-    try {
-      const result = await signInWithPopup(auth, provider);
-      console.log("login success", result.user);
-    } catch (e) {
-      console.error(e);
-    }
-  });
-
-  logoutBtn.addEventListener("click", async () => {
-    await signOut(auth);
-    menuPanel.hidden = true;
-  });
+logoutBtn.addEventListener("click", async () => {
+  await signOut(auth);
+  menuPanel.hidden = true;
 });
 
 
