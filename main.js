@@ -80,6 +80,81 @@ let isInitializing = true; // ★ 追加
 let syncMode = "OFFLINE";
 let unsubscribe = null;
 
+let titleInput = null;
+let headerEl = null;
+let loginBtn = null;
+let logoutBtn = null;
+let menuBtn = null;
+let menuPanel = null;
+
+function initAfterEditor(view) {
+  console.log("[initAfterEditor] start");
+
+  // --- DOM取得 ---
+  headerEl   = document.getElementById("app-header");
+  titleInput = document.querySelector(".header-title");
+  loginBtn  = document.getElementById("login-btn");
+  logoutBtn = document.getElementById("logout-btn");
+  menuBtn   = document.getElementById("menu-btn");
+  menuPanel = document.getElementById("menu-panel");
+
+  console.log("[initAfterEditor] dom", {
+    headerEl,
+    titleInput,
+    loginBtn,
+    logoutBtn,
+    menuBtn,
+    menuPanel
+  });
+
+  // --- title ---
+  if (titleInput) {
+    titleInput.value = loadTitleLocal();
+
+    titleInput.addEventListener("input", saveTitle);
+    titleInput.addEventListener("blur", saveTitle);
+  }
+
+  // --- login ---
+  if (loginBtn) {
+    loginBtn.addEventListener("click", async () => {
+      console.log("[login] click");
+      try {
+        const result = await signInWithPopup(auth, provider);
+        console.log("[login] success", result.user.uid);
+      } catch (e) {
+        console.error("[login] failed", e);
+      }
+    });
+  }
+
+  // --- logout ---
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      console.log("[logout] click");
+      await signOut(auth);
+      if (menuPanel) menuPanel.hidden = true;
+    });
+  }
+
+  // --- menu ---
+  if (menuBtn && menuPanel) {
+    menuBtn.addEventListener("click", e => {
+      console.log("[menu] toggle");
+      e.stopPropagation();
+      menuPanel.hidden = !menuPanel.hidden;
+    });
+
+    document.addEventListener("click", () => {
+      menuPanel.hidden = true;
+    });
+  }
+
+  console.log("[initAfterEditor] done");
+}
+
+
+
 function updateNetworkState(online) {
   networkState = online ? "ONLINE" : "OFFLINE";
 
@@ -487,32 +562,14 @@ function applyAppend(editor, text) {
   });
 }
 
-const loginBtn = document.getElementById("login-btn");
-const logoutBtn = document.getElementById("logout-btn");
-const menuUser = document.getElementById("menu-user");
 
 
-loginBtn.addEventListener("click", async () => {
-  try {
-    const result = await signInWithPopup(auth, provider);
-    console.log("login success", result.user);
-  } catch (e) {
-    console.error(e);
-  }
-});
-
-logoutBtn.addEventListener("click", async () => {
-  await signOut(auth);
-  menuPanel.hidden = true;
-});
 
 
 onAuthStateChanged(auth, async user => {
   if (user) {
     currentUser = user;
-    loginBtn.classList.add("hidden");
-    logoutBtn.classList.remove("hidden");
-
+    
     docRef = getUserDocRef(user.uid);
 
     let snap;
@@ -557,23 +614,6 @@ function stopFirestoreSync() {
   }
 }
 
-
-const menuBtn = document.getElementById("menu-btn");
-const menuPanel = document.getElementById("menu-panel");
-
-menuBtn.addEventListener("click", () => {
-  menuPanel.hidden = !menuPanel.hidden;
-});
-
-// 外側クリックで閉じる（かなり大事）
-document.addEventListener("click", (e) => {
-  if (
-    !menuPanel.contains(e.target) &&
-    e.target !== menuBtn
-  ) {
-    menuPanel.hidden = true;
-  }
-});
 
 
 
@@ -1572,8 +1612,6 @@ function outdentCurrentLine(view) {
 
 
 
-// ===== Header auto hide controller =====
-const headerEl = document.getElementById("app-header");
 
 let editorFocused = false;
 let keyboardVisible = false;
@@ -1627,37 +1665,7 @@ function exportDocument(view) {
   window.location.href = url;
 }
 
-// ===== Export button handler =====
-const exportBtn = document.querySelector(".header-btn.right");
 
-if (exportBtn) {
-  exportBtn.addEventListener("click", () => {
-    exportDocument(window.editorView);
-  });
-} else {
-  console.warn("export button not found");
-}
-
-/*
-const STORAGE_KEY = "cm6-line-editor-doc";
-
-function saveToLocal(state) {
-  localStorage.setItem(
-    STORAGE_KEY,
-    state.doc.toString()
-  );
-}
-
-function loadFromLocal() {
-  return localStorage.getItem(STORAGE_KEY) ?? "";
-}
-
-const autosaveExtension = EditorView.updateListener.of(update => {
-  if (update.docChanged) {
-    saveToLocal(update.state);
-  }
-});
-*/
 
 let isApplyingRemote = false; // Firestore反映中フラグ
 let isComposing = false;      // IME入力中
@@ -1706,43 +1714,12 @@ const imeWatcher = EditorView.domEventHandlers({
 
 
 
-const titleInput = document.querySelector(".header-title");
-
 const TITLE_KEY = "cm6-title";
 
-/* ===== load ===== */
-const savedTitle = localStorage.getItem(TITLE_KEY);
-if (savedTitle !== null) {
-  titleInput.value = savedTitle ?? "";
-}
-
-/* ===== save ===== 
-function saveTitle() {
-  const value = titleInput.value.trim();
-  if (value === "") {
-    localStorage.removeItem(TITLE_KEY);
-  } else {
-    localStorage.setItem(TITLE_KEY, value);
-  }
-}*/
-
-titleInput.addEventListener("input", saveTitle);
-titleInput.addEventListener("blur", saveTitle);
 
 let composing = false;
 
-titleInput.addEventListener("compositionstart", () => {
-  composing = true;
-});
 
-titleInput.addEventListener("compositionend", () => {
-  composing = false;
-  saveTitle();
-});
-
-titleInput.addEventListener("input", () => {
-  if (!composing) saveTitle();
-});
 
 
 const focusedActiveLine = ViewPlugin.fromClass(
@@ -1891,7 +1868,7 @@ function loadTitleLocal() {
   return localStorage.getItem(LOCAL_TITLE_KEY) ?? "";
 }
 
-titleInput.value = loadTitleLocal();
+//titleInput.value = loadTitleLocal();
 
 
 function moveSelectionByLines(view, dir) {
@@ -2303,6 +2280,8 @@ const view = new EditorView({
   state,
   parent: document.getElementById("editor")
 });
+
+initAfterEditor(view);
 
 // 初期状態
 updateNetworkState(navigator.onLine);
