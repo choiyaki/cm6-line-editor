@@ -1,415 +1,416 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
   <meta charset="utf-8" />
-    		<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
   <title>CM6 Line Editor</title>
-	<link rel="preconnect" href="https://fonts.googleapis.com">
-		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-		
-			<link rel="manifest" href="./manifest.json">
-		<meta name="theme-color" content="#ffffff">
-		<meta name="apple-mobile-web-app-capable" content="yes">
-		<meta name="apple-mobile-web-app-status-bar-style" content="default">
-		<meta name="mobile-web-app-capable" content="yes">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="mobile-web-app-capable" content="yes">
   <style>
-		
-		.cm-content {
-		  line-height: 1.5;   /* 1.4〜1.8あたりが扱いやすい */
-		}
-		
-		.cm-line {
-			white-space: pre-wrap;
-		}
-		/* ===== 非空行をカード風に ===== */
-.cm-line {
-  border-radius: 2px;
-}
+    .cm-content {
+      line-height: 1.5;
+      /* 1.4〜1.8あたりが扱いやすい */
+    }
 
-.cm-line.cm-non-empty-line {
-  /*background: #fff8e6;*/
-  border-radius: 6px;
-}
-		
-.cm-line.cm-block-body {
-  position: relative;
-}
-		.cm-line:has(.cm-list-bullet) {
-		  padding-left: 2em;
-		  text-indent: -2em;
-		}
-		
-		
-		.cm-gutters{
-			background-color: #fff;
-  		border-right: none !important;
-		}
-		
-		.cm-body {
-		  display: inline-block;
-		  padding-left: var(--prefix-width);
-		  text-indent: calc(var(--prefix-width) * -1);
-		  white-space: pre-wrap;
-		}
+    .cm-line {
+      white-space: pre-wrap;
+    }
 
-		html, body {
-		  margin: 0;
-		  padding: 0;
-		}
-		
-		body {
-			font-family: "IBM Plex Sans JP", sans-serif;
-		  overflow-y: auto;
-		  -webkit-overflow-scrolling: touch;
-		}
-		
-		/* ===== header ===== */
-		
-		#app-header {
-		  position: fixed;
-		  top: 0;
-		  left: 0;
-		  right: 0;
-		  height: 40px;
-		  background: #fff;
-		  border-bottom: 1px solid #ddd;
-		  z-index: 1000;
-		}
-		
-/* ===== header hide when editing ===== */
-#app-header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 40px;
+    /* ===== 非空行をカード風に ===== */
+    .cm-line {
+      border-radius: 2px;
+    }
 
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 8px;
+    .cm-line.cm-non-empty-line {
+      /*background: #fff8e6;*/
+      border-radius: 6px;
+    }
 
-  padding: 0 8px;
+    .cm-line.cm-block-body {
+      position: relative;
+    }
 
-  background: #fff;
-  border-bottom: 1px solid #ddd;
-  z-index: 1000;
+    .cm-line:has(.cm-list-bullet) {
+      padding-left: 2em;
+      text-indent: -2em;
+    }
 
-  transition: transform 0.25s ease, opacity 0.25s ease;
-}
 
-#app-header.is-hidden {
-  transform: translateY(-100%);
-  opacity: 0;
-  pointer-events: none;
-}
+    .cm-gutters {
+      background-color: #fff;
+      border-right: none !important;
+    }
 
-.header-btn {
-  height: 28px;
-  padding: 0 10px;
+    .cm-body {
+      display: inline-block;
+      padding-left: var(--prefix-width);
+      text-indent: calc(var(--prefix-width) * -1);
+      white-space: pre-wrap;
+    }
 
-  border: none;
-  border-radius: 6px;
-  background: #f2f2f2;
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+    }
 
-  font-size: 13px;
-  cursor: pointer;
-}
+    body {
+      font-family: "IBM Plex Sans JP", sans-serif;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
 
-.header-btn:active {
-  background: #e0e0e0;
-}
+    /* ===== header ===== */
 
-.header-title {
-  width: 95%;
-  height: 28px;
+    #app-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 40px;
+      background: #fff;
+      border-bottom: 1px solid #ddd;
+      z-index: 1000;
+    }
 
-  padding: 0 8px;
-  border: none;
-  border-radius: 6px;
+    /* ===== header hide when editing ===== */
+    #app-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 40px;
 
-  background: #f7f7f7;
-  text-align: center;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 8px;
 
-  font-size: 16px;
-  font-weight: 500;
-  outline: none;
-}
+      padding: 0 8px;
 
-.header-title:focus {
-  background: #eef2ff;
-}
+      background: #fff;
+      border-bottom: 1px solid #ddd;
+      z-index: 1000;
 
-		
-		/* ===== main ===== */
-		
-		#app-main {
-		  padding-top: 40px;
-		}
-		
-		/* ===== scale ===== */
-		
-		#editor-scale-wrapper {
-		  font-size: 16px;
-		  transform: scale(0.875);
-		  transform-origin: top left;
-		  width: calc(100% / 0.875);
-		}
-		
-		/* エディタのコンテナに対して設定 */
-		.cm-editor {
-		  position: relative;
-		}
-		
-		.cm-editor::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 25%;
-  height: 100%;
+      transition: transform 0.25s ease, opacity 0.25s ease;
+    }
 
-  background-color: rgba(0, 122, 255, 0.03);
-  border-left: 1px dashed rgba(0, 122, 255, 0.1);
+    #app-header.is-hidden {
+      transform: translateY(-100%);
+      opacity: 0;
+      pointer-events: none;
+    }
 
-  pointer-events: none;
-  z-index: 0;
-}
+    .header-btn {
+      height: 28px;
+      padding: 0 10px;
 
-.cm-scroller,
-.cm-content,
-.cm-gutters {
-  position: relative;
-  z-index: 1;
-}
-		/* 非空行だけ右側操作エリアを表示 */
+      border: none;
+      border-radius: 6px;
+      background: #f2f2f2;
 
-/* 空行では右側操作エリアを完全に消す 
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .header-btn:active {
+      background: #e0e0e0;
+    }
+
+    .header-title {
+      width: 95%;
+      height: 28px;
+
+      padding: 0 8px;
+      border: none;
+      border-radius: 6px;
+
+      background: #f7f7f7;
+      text-align: center;
+
+      font-size: 16px;
+      font-weight: 500;
+      outline: none;
+    }
+
+    .header-title:focus {
+      background: #eef2ff;
+    }
+
+
+    /* ===== main ===== */
+
+    #app-main {
+      padding-top: 40px;
+    }
+
+    /* ===== scale ===== */
+
+    #editor-scale-wrapper {
+      font-size: 16px;
+      transform: scale(0.875);
+      transform-origin: top left;
+      width: calc(100% / 0.875);
+    }
+
+    /* エディタのコンテナに対して設定 */
+    .cm-editor {
+      position: relative;
+    }
+
+    .cm-editor::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 25%;
+      height: 100%;
+
+      background-color: rgba(0, 122, 255, 0.03);
+      border-left: 1px dashed rgba(0, 122, 255, 0.1);
+
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .cm-scroller,
+    .cm-content,
+    .cm-gutters {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* 非空行だけ右側操作エリアを表示 */
+
+    /* 空行では右側操作エリアを完全に消す 
 .cm-editor:not(.cm-non-empty-line)::after {
   content: none;
 }*/
-		
-		/* スクロールバーや中身がブルーの下に隠れないよう調整 */
-		.cm-scroller {
-		  z-index: 1;
-		}
+
+    /* スクロールバーや中身がブルーの下に隠れないよう調整 */
+    .cm-scroller {
+      z-index: 1;
+    }
 
 
-.cm-block-gutter .cm-gutterElement {
-  align-items: flex-start;
-}
+    .cm-block-gutter .cm-gutterElement {
+      align-items: flex-start;
+    }
 
-/* ブロック本体側の縦バー */
-.cm-line.cm-block-body {
-  position: relative;
-}
+    /* ブロック本体側の縦バー */
+    .cm-line.cm-block-body {
+      position: relative;
+    }
 
-.cm-block-menu {
-  position: fixed;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.15);
-  padding: 6px;
-  z-index: 1000;
-}
+    .cm-block-menu {
+      position: fixed;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+      padding: 6px;
+      z-index: 1000;
+    }
 
-.cm-block-menu button {
-  display: block;
-  width: 100%;
-  padding: 10px 10px;
-  background: none;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-	font-size: 14px;
-}
+    .cm-block-menu button {
+      display: block;
+      width: 100%;
+      padding: 10px 10px;
+      background: none;
+      border: none;
+      text-align: left;
+      cursor: pointer;
+      font-size: 14px;
+    }
 
-.cm-block-menu button:hover {
-  background: #f0f4ff;
-}
+    .cm-block-menu button:hover {
+      background: #f0f4ff;
+    }
 
-.block-gutter-btn {
-  width: 18px;
-  margin-left: 2px;
-  background: rgba(0, 122, 255, 0.18);
-  border-radius: 3px;
-  cursor: pointer;
-}
+    .block-gutter-btn {
+      width: 18px;
+      margin-left: 2px;
+      background: rgba(0, 122, 255, 0.18);
+      border-radius: 3px;
+      cursor: pointer;
+    }
 
-.cm-block-head-gutter {
-  width: 1.5em;
-}
+    .cm-block-head-gutter {
+      width: 1.5em;
+    }
 
-.cm-block-head-button {
-  width: 1.2em;
-  height: 1.2em;
-	
-  margin: 0.5em auto;
+    .cm-block-head-button {
+      width: 1.2em;
+      height: 1.2em;
 
-  border-radius: 50%;
-  background: #d6d0c4;
-  color: white;
+      margin: 0.5em auto;
 
-  font-size: 10px;
-	font-weight: bold;
-  line-height: 1.2em;
-  text-align: center;
+      border-radius: 50%;
+      background: #d6d0c4;
+      color: white;
 
-  cursor: pointer;
-}
+      font-size: 10px;
+      font-weight: bold;
+      line-height: 1.2em;
+      text-align: center;
 
-.cm-block-head-button:hover {
-  background: #bfb8a8;
-}
+      cursor: pointer;
+    }
+
+    .cm-block-head-button:hover {
+      background: #bfb8a8;
+    }
 
 
-/* ===== main padding control ===== */
-#app-main {
-  transition: padding-top 0.25s ease;
-}
+    /* ===== main padding control ===== */
+    #app-main {
+      transition: padding-top 0.25s ease;
+    }
 
-body.header-hidden #app-main {
-  padding-top: 0;
-}
+    body.header-hidden #app-main {
+      padding-top: 0;
+    }
 
-/* カーソル行（本文） */
-.cm-activeLine {
-  background-color: rgba(100, 150, 255, 0.08);
-}
+    /* カーソル行（本文） */
+    .cm-activeLine {
+      background-color: rgba(100, 150, 255, 0.08);
+    }
 
-/* ガター側（必要なら） */
-.cm-activeLineGutter {
-  background-color: rgba(100, 150, 255, 0.12);
-}
+    /* ガター側（必要なら） */
+    .cm-activeLineGutter {
+      background-color: rgba(100, 150, 255, 0.12);
+    }
 
-#menu-panel {
-  position: absolute;
-  top: 40px;
-  left: 8px;
+    #menu-panel {
+      position: absolute;
+      top: 40px;
+      left: 8px;
 
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 6px;
-  min-width: 180px;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 6px;
+      min-width: 180px;
 
-  box-shadow: 0 6px 16px rgba(0,0,0,0.15);
-  z-index: 2000;
-}
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+      z-index: 2000;
+    }
 
-#menu-panel button {
-  width: 100%;
-  padding: 8px;
-  border: none;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  font-size: 14px;
-}
+    #menu-panel button {
+      width: 100%;
+      padding: 8px;
+      border: none;
+      background: none;
+      text-align: left;
+      cursor: pointer;
+      font-size: 14px;
+    }
 
-#menu-panel button:hover {
-  background: #f0f4ff;
-}
+    #menu-panel button:hover {
+      background: #f0f4ff;
+    }
 
-.menu-user {
-  padding: 6px 8px;
-  font-size: 13px;
-  color: #555;
-  border-bottom: 1px solid #eee;
-  margin-bottom: 4px;
-}
+    .menu-user {
+      padding: 6px 8px;
+      font-size: 13px;
+      color: #555;
+      border-bottom: 1px solid #eee;
+      margin-bottom: 4px;
+    }
 
-.hidden {
-  display: none;
-}
+    .hidden {
+      display: none;
+    }
 
-/* ===== Markdown look ===== */
+    /* ===== Markdown look ===== */
 
-/* 見出し */
-.cm-line.cm-md-heading {
-  font-weight: 700;
-	color: #0000FF;
-}
+    /* 見出し */
+    .cm-line.cm-md-heading {
+      font-weight: 700;
+      color: #0000FF;
+    }
 
-/* レベル別（任意） 
+    /* レベル別（任意） 
 .cm-line.cm-md-h1 { font-size: 1.25em; }
 .cm-line.cm-md-h2 { font-size: 1.15em; }
 .cm-line.cm-md-h3 { font-size: 1.08em; }*/
 
-/* リスト */
-.cm-line.cm-md-list {
-  color: #0000CD;
-}
+    /* リスト */
+    .cm-line.cm-md-list {
+      color: #0000CD;
+    }
 
-/* チェックボックス */
-.cm-line.cm-md-checkbox {
-  color: #0000CD;
-}
+    /* チェックボックス */
+    .cm-line.cm-md-checkbox {
+      color: #0000CD;
+    }
 
-/* 完了チェック */
-.cm-line.cm-md-checkbox-done {
-  color: #9ca3af;
-  text-decoration: line-through;
-}
-/* 完了タスク配下 */
-.cm-line.cm-md-done-child {
-  color: #9ca3af;
-}
+    /* 完了チェック */
+    .cm-line.cm-md-checkbox-done {
+      color: #9ca3af;
+    }
 
-.cm-selection-move-popup {
-  position: absolute;   /* ← absolute ではなく */
-  z-index: 50;
-  background: #222;
-  color: #fff;
-  border-radius: 8px;
-  padding: 4px;
-  gap: 4px;
-  display: none;
-}
+    /* 完了タスク配下 */
+    .cm-line.cm-md-done-child {
+      color: #9ca3af;
+    }
 
-.cm-selection-move-popup button {
-  background: #444;
-  border: none;
-  color: white;
-  font-size: 14px;
-  padding: 6px;
-  border-radius: 6px;
-}
+    .cm-selection-move-popup {
+      position: absolute;
+      /* ← absolute ではなく */
+      z-index: 50;
+      background: #222;
+      color: #fff;
+      border-radius: 8px;
+      padding: 4px;
+      gap: 4px;
+      display: none;
+    }
 
-.cm-append-locked-line {
-  background: rgba(180, 180, 180, 0.18);
-}
+    .cm-selection-move-popup button {
+      background: #444;
+      border: none;
+      color: white;
+      font-size: 14px;
+      padding: 6px;
+      border-radius: 6px;
+    }
 
-
-
+    .cm-append-locked-line {
+      background: rgba(180, 180, 180, 0.18);
+    }
   </style>
 </head>
-<body>
-	<header id="app-header">
-	  <button id="menu-btn" class="header-btn left">☰</button>
-	
-	  <input
-	    type="text"
-	    class="header-title"
-	    placeholder="タイトル"
-	  />
-	
-	  <button class="header-btn right">📤</button>
-		<div id="menu-panel" hidden>
-	    <div id="menu-user" class="menu-user hidden"></div>
-	    <button id="login-btn">Login with Google</button>
-	    <button id="logout-btn" class="hidden">Logout</button>
-	  </div>
 
-	</header>
+<body>
+  <header id="app-header">
+    <button id="menu-btn" class="header-btn left">☰</button>
+
+    <input type="text" class="header-title" placeholder="タイトル" />
+
+    <button class="header-btn right">📤</button>
+    <div id="menu-panel" hidden>
+      <div id="menu-user" class="menu-user hidden"></div>
+      <button id="login-btn">Login with Google</button>
+      <button id="logout-btn" class="hidden">Logout</button>
+    </div>
+
+  </header>
 
   <main id="app-main">
     <div id="editor-scale-wrapper">
       <div id="editor"></div>
     </div>
   </main>
-  <script type="module" src="./main.js"></script>
+  <script type="module" src="./main.js?v=2"></script>
 
 </body>
+
 </html>
